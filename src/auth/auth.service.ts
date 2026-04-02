@@ -96,6 +96,100 @@ export class AuthService {
     }
   }
 
+  async refresh(
+    cookies?: string,
+    authorization?: string,
+  ): Promise<{ data: unknown; setCookies: string[] }> {
+    this.logger.log(
+      `[refresh] forward to profiles auth/refresh hasCookie=${Boolean(cookies)} hasAuthorization=${Boolean(authorization)}`,
+    );
+
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (cookies) {
+        headers.Cookie = cookies;
+      }
+
+      if (authorization) {
+        headers.Authorization = authorization;
+      }
+
+      const response = await firstValueFrom(
+        this.httpService.post(
+          'https://profiles.uside.studio/auth/refresh',
+          {},
+          {
+            headers,
+          },
+        ),
+      );
+
+      const setCookies =
+        (response.headers['set-cookie'] as string[] | undefined) ?? [];
+
+      this.logger.log(
+        `[refresh] success status=${response.status} setCookieCount=${setCookies.length}`,
+      );
+
+      return {
+        data: response.data,
+        setCookies,
+      };
+    } catch (error) {
+      this.throwUpstreamAuthError(error, 'refresh', 'Refresh token failed');
+    }
+  }
+
+  async logout(
+    cookies?: string,
+    authorization?: string,
+  ): Promise<{ data: unknown; setCookies: string[] }> {
+    this.logger.log(
+      `[logout] forward to profiles auth/logout hasCookie=${Boolean(cookies)} hasAuthorization=${Boolean(authorization)}`,
+    );
+
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (cookies) {
+        headers.Cookie = cookies;
+      }
+
+      if (authorization) {
+        headers.Authorization = authorization;
+      }
+
+      const response = await firstValueFrom(
+        this.httpService.post(
+          'https://profiles.uside.studio/auth/logout',
+          {},
+          {
+            headers,
+          },
+        ),
+      );
+
+      const setCookies =
+        (response.headers['set-cookie'] as string[] | undefined) ?? [];
+
+      this.logger.log(
+        `[logout] success status=${response.status} setCookieCount=${setCookies.length}`,
+      );
+
+      return {
+        data: response.data,
+        setCookies,
+      };
+    } catch (error) {
+      this.throwUpstreamAuthError(error, 'logout', 'Logout failed');
+    }
+  }
+
   async validateToken(
     token?: string,
     cookies?: string,

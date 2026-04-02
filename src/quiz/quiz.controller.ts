@@ -1,13 +1,24 @@
-import { Controller, Get, Post, Body, Param, Put, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Put,
+  Delete,
+  Query,
+} from '@nestjs/common';
 import { QuizService } from './quiz.service';
+import { PaginationQueryDto } from './dto/pagination-query.dto';
+import { CreateQuizDto } from './dto/create-quiz.dto';
 
 @Controller('quiz')
 export class QuizController {
   constructor(private quizService: QuizService) {}
 
   @Get()
-  async getAllQuizzes() {
-    return this.quizService.getAllQuizzes();
+  async getAllQuizzes(@Query() query: PaginationQueryDto) {
+    return this.quizService.getAllQuizzes(query);
   }
 
   @Get(':id')
@@ -21,7 +32,7 @@ export class QuizController {
   }
 
   @Post()
-  async createQuiz(@Body() data: any) {
+  async createQuiz(@Body() data: CreateQuizDto) {
     return this.quizService.createQuiz(data);
   }
 

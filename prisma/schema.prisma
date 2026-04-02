@@ -9,36 +9,120 @@ datasource db {
   provider = "postgresql"
 }
 
+model Topic {
+  id        String @id @default(cuid())
+  name      String
+  slug      String @unique
+
+  quizzes   Quiz[]
+  attempts  QuizAttempt[]
+  progresses TopicProgress[]
+  sessions  AttemptSession[]
+
+  createdAt DateTime @default(now())
+
+  @@map("topics")
+}
+
 model Quiz {
   id          String   @id @default(cuid())
-  quizCode    String   @unique // e.g., "c_case_01"
-  content     Content?
-  options     Options?
+  quizCode    String   @unique
+
+  question    String
+  code        String?
+  explanation String?
   answer      String
-  explanation String
+
+  topicId     String
+  topic       Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  options     Option[]
+  attempts    QuizAttempt[]
+  sessions    AttemptSession[]
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@map("quizzes")
 }
 
-model Content {
+model Option {
   id       String @id @default(cuid())
-  text     String
-  code     String
-  hasCode  Boolean
-  quiz     Quiz   @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  quizId   String @unique
 
-  @@map("contents")
-}
+  label    String   // A, B, C, D
+  content  String
+  isCode   Boolean @default(false)
 
-model Options {
-  id       String @id @default(cuid())
-  isCode   Boolean
-  data     Json // Store option choices as JSON: { "1": "option1", "2": "option2", etc }
-  quiz     Quiz   @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  quizId   String @unique
+  quizId   String
+  quiz     Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
 
   @@map("options")
+}
+
+model QuizAttempt {
+  id             String   @id @default(cuid())
+  userId         String
+  quizId         String
+  topicId        String
+  selectedAnswer String
+  isCorrect      Boolean
+  score          Int      @default(0)
+  startedAt      DateTime?
+  submittedAt    DateTime @default(now())
+  durationMs     Int?
+  createdAt      DateTime @default(now())
+
+  quiz           Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  topic          Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@index([userId, submittedAt])
+  @@index([userId, quizId, submittedAt])
+  @@index([topicId, submittedAt])
+  @@map("quiz_attempts")
+}
+
+model TopicProgress {
+  id             String   @id @default(cuid())
+  userId         String
+  topicId        String
+  totalAttempts  Int      @default(0)
+  correctAttempts Int     @default(0)
+  accuracy       Float    @default(0)
+  lastAttemptAt  DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  topic          Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, topicId])
+  @@index([userId, updatedAt])
+  @@map("topic_progresses")
+}
+
+enum AttemptSessionStatus {
+  IN_PROGRESS
+  SUBMITTED
+  EXPIRED
+}
+
+model AttemptSession {
+  id            String               @id @default(cuid())
+  userId        String
+  topicId       String
+  currentQuizId String?
+  status        AttemptSessionStatus @default(IN_PROGRESS)
+  answers       Json
+  startedAt     DateTime             @default(now())
+  lastSeenAt    DateTime             @default(now())
+  expiresAt     DateTime
+  submittedAt   DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  topic         Topic                @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  currentQuiz   Quiz?                @relation(fields: [currentQuizId], references: [id], onDelete: SetNull)
+
+  @@index([userId, topicId, status, updatedAt])
+  @@index([userId, status, expiresAt])
+  @@map("attempt_sessions")
 }

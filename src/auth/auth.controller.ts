@@ -26,7 +26,7 @@ export class AuthController {
   @Post('login')
   async login(
     @Body() body: LoginDto,
-    @Request() req,
+    @Request() req: ExpressRequest,
     @Response({ passthrough: true }) res: ExpressResponse,
   ) {
     const { data, setCookies } = await this.authService.login(
@@ -47,7 +47,7 @@ export class AuthController {
   @Post('2fa/verify/totp')
   async verifyTotp(
     @Body() body: VerifyTotpDto,
-    @Request() req,
+    @Request() req: ExpressRequest,
     @Response({ passthrough: true }) res: ExpressResponse,
   ) {
     const { data, setCookies } = await this.authService.verifyTotp(
@@ -65,9 +65,49 @@ export class AuthController {
     return data;
   }
 
+  @Public()
+  @Post('refresh')
+  async refresh(
+    @Request() req: ExpressRequest,
+    @Response({ passthrough: true }) res: ExpressResponse,
+  ) {
+    const { data, setCookies } = await this.authService.refresh(
+      req.headers.cookie,
+      req.headers.authorization,
+    );
+
+    if (setCookies.length > 0) {
+      const normalized = this.normalizeSetCookies(setCookies, req);
+      this.warnCookieOverwrite(req, normalized, 'refresh');
+      res.setHeader('set-cookie', normalized);
+    }
+
+    return data;
+  }
+
+  @Public()
+  @Post('logout')
+  async logout(
+    @Request() req: ExpressRequest,
+    @Response({ passthrough: true }) res: ExpressResponse,
+  ) {
+    const { data, setCookies } = await this.authService.logout(
+      req.headers.cookie,
+      req.headers.authorization,
+    );
+
+    if (setCookies.length > 0) {
+      const normalized = this.normalizeSetCookies(setCookies, req);
+      this.warnCookieOverwrite(req, normalized, 'logout');
+      res.setHeader('set-cookie', normalized);
+    }
+
+    return data;
+  }
+
   @Get('me')
   @UseGuards(BearerAuthGuard)
-  getProfile(@Request() req) {
+  getProfile(@Request() req: ExpressRequest & { user?: unknown }) {
     return req.user;
   }
 
