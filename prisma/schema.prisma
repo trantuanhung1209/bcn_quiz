@@ -1,0 +1,44 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Quiz {
+  id          String   @id @default(cuid())
+  quizCode    String   @unique // e.g., "c_case_01"
+  content     Content?
+  options     Options?
+  answer      String
+  explanation String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("quizzes")
+}
+
+model Content {
+  id       String @id @default(cuid())
+  text     String
+  code     String
+  hasCode  Boolean
+  quiz     Quiz   @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  quizId   String @unique
+
+  @@map("contents")
+}
+
+model Options {
+  id       String @id @default(cuid())
+  isCode   Boolean
+  data     Json // Store option choices as JSON: { "1": "option1", "2": "option2", etc }
+  quiz     Quiz   @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  quizId   String @unique
+
+  @@map("options")
+}
