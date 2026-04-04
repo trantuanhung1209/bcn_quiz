@@ -11,6 +11,7 @@ import {
 import { QuizService } from './quiz.service';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { CreateQuizDto } from './dto/create-quiz.dto';
+import { Roles } from 'src/auth/decorators/roles.decorator';
 
 @Controller('quiz')
 export class QuizController {
@@ -31,16 +32,19 @@ export class QuizController {
     return this.quizService.getQuizByCode(code);
   }
 
+  @Roles('admin')
   @Post()
   async createQuiz(@Body() data: CreateQuizDto) {
     return this.quizService.createQuiz(data);
   }
 
+  @Roles('admin')
   @Put(':id')
   async updateQuiz(@Param('id') id: string, @Body() data: any) {
     return this.quizService.updateQuiz(id, data);
   }
 
+  @Roles('admin')
   @Delete(':id')
   async deleteQuiz(@Param('id') id: string) {
     return this.quizService.deleteQuiz(id);

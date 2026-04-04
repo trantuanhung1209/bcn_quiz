@@ -110,8 +110,9 @@ export class TopicService {
   }
 
   async getQuizzesByTopicSlug(slug: string, query: PaginationQueryDto) {
-    const topic = await this.prisma.topic.findUnique({
+    const topic = await this.prisma.topic.findFirst({
       where: { slug },
+      orderBy: { createdAt: 'desc' },
       select: { id: true },
     });
 
@@ -178,8 +179,9 @@ export class TopicService {
   }
 
   async getTopicBySlug(slug: string) {
-    const topic = await this.prisma.topic.findUnique({
+    const topic = await this.prisma.topic.findFirst({
       where: { slug },
+      orderBy: { createdAt: 'desc' },
       include: {
         _count: {
           select: {
@@ -197,13 +199,34 @@ export class TopicService {
   }
 
   async createTopic(data: CreateTopicDto) {
-    await this.ensureSlugUnique(data.slug);
+    await this.ensureSlugUniqueInCourse(data.courseId, data.slug);
+    await this.ensureCourseExists(data.courseId);
 
-    return this.prisma.topic.create({
-      data: {
-        name: data.name,
-        slug: data.slug,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const topic = await tx.topic.create({
+        data: {
+          name: data.name,
+          slug: data.slug,
+        },
+      });
+
+      const lastCourseTopic = await tx.courseTopic.findFirst({
+        where: { courseId: data.courseId },
+        orderBy: { sortOrder: 'desc' },
+        select: { sortOrder: true },
+      });
+
+      const sortOrder = (lastCourseTopic?.sortOrder ?? 0) + 1;
+
+      await tx.courseTopic.create({
+        data: {
+          courseId: data.courseId,
+          topicId: topic.id,
+          sortOrder,
+        },
+      });
+
+      return topic;
     });
   }
 
@@ -211,7 +234,7 @@ export class TopicService {
     await this.ensureTopicExists(id);
 
     if (data.slug) {
-      await this.ensureSlugUnique(data.slug, id);
+      await this.ensureSlugUniqueForLinkedCourses(id, data.slug);
     }
 
     return this.prisma.topic.update({
@@ -228,17 +251,37 @@ export class TopicService {
     });
   }
 
-  private async ensureSlugUnique(slug: string, currentTopicId?: string) {
-    const existing = await this.prisma.topic.findFirst({
+  private async ensureSlugUniqueInCourse(
+    courseId: string,
+    slug: string,
+    currentTopicId?: string,
+  ) {
+    const existing = await this.prisma.courseTopic.findFirst({
       where: {
-        slug,
-        ...(currentTopicId ? { id: { not: currentTopicId } } : {}),
+        courseId,
+        topic: {
+          slug,
+          ...(currentTopicId ? { id: { not: currentTopicId } } : {}),
+        },
       },
       select: { id: true },
     });
 
     if (existing) {
-      throw new ConflictException(`Topic slug '${slug}' already exists`);
+      throw new ConflictException(
+        `Topic slug '${slug}' already exists in this course`,
+      );
+    }
+  }
+
+  private async ensureSlugUniqueForLinkedCourses(topicId: string, slug: string) {
+    const links = await this.prisma.courseTopic.findMany({
+      where: { topicId },
+      select: { courseId: true },
+    });
+
+    for (const link of links) {
+      await this.ensureSlugUniqueInCourse(link.courseId, slug, topicId);
     }
   }
 
@@ -250,6 +293,17 @@ export class TopicService {
 
     if (!existing) {
       throw new NotFoundException(`Topic with id '${id}' was not found`);
+    }
+  }
+
+  private async ensureCourseExists(id: string) {
+    const existing = await this.prisma.course.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Course with id '${id}' was not found`);
     }
   }
 }

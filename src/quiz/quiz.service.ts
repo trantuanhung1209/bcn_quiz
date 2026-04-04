@@ -113,6 +113,7 @@ export class QuizService {
 
     const existingQuiz = await this.prisma.quiz.findFirst({
       where: {
+        topicId,
         quizCode,
         ...(currentQuizId ? { id: { not: currentQuizId } } : {}),
       },
@@ -120,7 +121,9 @@ export class QuizService {
     });
 
     if (existingQuiz) {
-      throw new ConflictException(`quizCode '${quizCode}' already exists`);
+      throw new ConflictException(
+        `quizCode '${quizCode}' already exists in this topic`,
+      );
     }
 
     const existingTopic = await this.prisma.topic.findUnique({
@@ -181,8 +184,9 @@ export class QuizService {
   }
 
   async getQuizByCode(quizCode: string) {
-    const quiz = await this.prisma.quiz.findUnique({
+    const quiz = await this.prisma.quiz.findFirst({
       where: { quizCode },
+      orderBy: { createdAt: 'desc' },
       include: {
         topic: true,
         options: true,

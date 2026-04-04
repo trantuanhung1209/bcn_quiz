@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import type { Request as ExpressRequest } from 'express';
@@ -11,10 +12,16 @@ import { SubmitAttemptDto } from './dto/submit-attempt.dto';
 import { AttemptQueryDto } from './dto/attempt-query.dto';
 import { StartSessionDto } from './dto/start-session.dto';
 import { SaveSessionDto } from './dto/save-session.dto';
+import { CourseProgressService } from '../course/course-progress.service';
 
 @Injectable()
 export class AttemptService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(AttemptService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly courseProgressService: CourseProgressService,
+  ) {}
 
   async startTopicSession(
     topicId: string,
@@ -254,6 +261,8 @@ export class AttemptService {
       });
     });
 
+    await this.safeReevaluateCourseProgressByTopic(userId, session.topicId, req);
+
     return {
       sessionId: session.id,
       topicId: session.topicId,
@@ -319,6 +328,8 @@ export class AttemptService {
 
       return attempt;
     });
+
+    await this.safeReevaluateCourseProgressByTopic(userId, quiz.topicId, req);
 
     return {
       attemptId: result.id,
@@ -721,6 +732,13 @@ export class AttemptService {
           totalAttempts,
           correctAttempts,
           accuracy: totalAttempts > 0 ? correctAttempts / totalAttempts : 0,
+          isCompleted:
+            totalAttempts > 0 && correctAttempts / totalAttempts >= 0.8,
+          completedAt:
+            totalAttempts > 0 && correctAttempts / totalAttempts >= 0.8
+              ? lastAttemptAt
+              : null,
+          completionThreshold: 0.8,
           lastAttemptAt,
         },
       });
@@ -742,8 +760,31 @@ export class AttemptService {
         totalAttempts,
         correctAttempts,
         accuracy: totalAttempts > 0 ? correctAttempts / totalAttempts : 0,
+        isCompleted:
+          existingProgress.isCompleted ||
+          (totalAttempts > 0 && correctAttempts / totalAttempts >= 0.8),
+        completedAt:
+          existingProgress.isCompleted ||
+          !(totalAttempts > 0 && correctAttempts / totalAttempts >= 0.8)
+            ? existingProgress.completedAt
+            : lastAttemptAt,
+        completionThreshold: 0.8,
         lastAttemptAt,
       },
     });
+  }
+
+  private async safeReevaluateCourseProgressByTopic(
+    userId: string,
+    topicId: string,
+    req: ExpressRequest,
+  ): Promise<void> {
+    try {
+      await this.courseProgressService.evaluateCoursesByTopic(userId, topicId, req);
+    } catch (error) {
+      this.logger.warn(
+        `[safeReevaluateCourseProgressByTopic] failed userId=${userId} topicId=${topicId}`,
+      );
+    }
   }
 }

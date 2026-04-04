@@ -10,6 +10,8 @@ import { TopicModule } from './topic/topic.module';
 import { AttemptModule } from './attempt/attempt.module';
 import { BearerAuthGuard } from './auth/guards/auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
+import { CourseModule } from './course/course.module';
+import { CertificateModule } from './certificate/certificate.module';
 
 @Module({
   imports: [
@@ -19,6 +21,8 @@ import { RolesGuard } from './auth/guards/roles.guard';
     QuizModule,
     TopicModule,
     AttemptModule,
+    CourseModule,
+    CertificateModule,
   ],
   controllers: [AppController],
   providers: [

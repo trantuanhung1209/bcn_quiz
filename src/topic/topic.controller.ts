@@ -12,6 +12,7 @@ import { TopicService } from './topic.service';
 import { CreateTopicDto } from './dto/create-topic.dto';
 import { UpdateTopicDto } from './dto/update-topic.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
+import { Roles } from 'src/auth/decorators/roles.decorator';
 
 @Controller('topic')
 export class TopicController {
@@ -48,16 +49,19 @@ export class TopicController {
     return this.topicService.getTopicBySlug(slug);
   }
 
+  @Roles('admin')
   @Post()
   async createTopic(@Body() data: CreateTopicDto) {
     return this.topicService.createTopic(data);
   }
 
+  @Roles('admin')
   @Put(':id')
   async updateTopic(@Param('id') id: string, @Body() data: UpdateTopicDto) {
     return this.topicService.updateTopic(id, data);
   }
 
+  @Roles('admin')
   @Delete(':id')
   async deleteTopic(@Param('id') id: string) {
     return this.topicService.deleteTopic(id);

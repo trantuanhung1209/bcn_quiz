@@ -8,4 +8,8 @@ export class CreateTopicDto {
   @IsString()
   @IsNotEmpty()
   slug!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  courseId!: string;
 }

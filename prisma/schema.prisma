@@ -12,12 +12,13 @@ datasource db {
 model Topic {
   id        String @id @default(cuid())
   name      String
-  slug      String @unique
+  slug      String
 
-  quizzes   Quiz[]
-  attempts  QuizAttempt[]
+  quizzes    Quiz[]
+  attempts   QuizAttempt[]
   progresses TopicProgress[]
-  sessions  AttemptSession[]
+  sessions   AttemptSession[]
+  courseLinks CourseTopic[]
 
   createdAt DateTime @default(now())
 
@@ -26,7 +27,7 @@ model Topic {
 
 model Quiz {
   id          String   @id @default(cuid())
-  quizCode    String   @unique
+  quizCode    String
 
   question    String
   code        String?
@@ -43,6 +44,7 @@ model Quiz {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  @@unique([topicId, quizCode])
   @@map("quizzes")
 }
 
@@ -88,6 +90,9 @@ model TopicProgress {
   totalAttempts  Int      @default(0)
   correctAttempts Int     @default(0)
   accuracy       Float    @default(0)
+  isCompleted    Boolean  @default(false)
+  completedAt    DateTime?
+  completionThreshold Float @default(0.8)
   lastAttemptAt  DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -97,6 +102,147 @@ model TopicProgress {
   @@unique([userId, topicId])
   @@index([userId, updatedAt])
   @@map("topic_progresses")
+}
+
+enum CourseProgressStatus {
+  IN_PROGRESS
+  TOPICS_COMPLETED
+  PROJECT_PENDING_APPROVAL
+  COMPLETED
+}
+
+enum ProjectSubmissionStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+model Course {
+  id             String               @id @default(cuid())
+  name           String
+  slug           String               @unique
+  description    String?
+  hasProject     Boolean              @default(false)
+  topicWeight    Int                  @default(50)
+  projectWeight  Int                  @default(50)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  topics         CourseTopic[]
+  projectRequirement CourseProjectRequirement?
+  userProgresses UserCourseProgress[]
+  submissions    ProjectSubmission[]
+  certificates   Certificate[]
+
+  @@map("courses")
+}
+
+model CourseTopic {
+  id          String   @id @default(cuid())
+  courseId    String
+  topicId     String
+  sortOrder   Int
+  createdAt   DateTime @default(now())
+
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  topic       Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, topicId])
+  @@index([courseId, sortOrder])
+  @@map("course_topics")
+}
+
+model CourseProjectRequirement {
+  id             String   @id @default(cuid())
+  courseId       String   @unique
+  title          String
+  description    String?
+  isRequired     Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  course         Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  submissions    ProjectSubmission[]
+
+  @@map("course_project_requirements")
+}
+
+model UserCourseProgress {
+  id                     String               @id @default(cuid())
+  userId                 String
+  courseId               String
+  topicProgressPercent   Int                  @default(0)
+  projectProgressPercent Int                  @default(0)
+  progressPercent        Int                  @default(0)
+  status                 CourseProgressStatus @default(IN_PROGRESS)
+  topicsCompletedAt      DateTime?
+  projectApprovedAt      DateTime?
+  completedAt            DateTime?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+
+  course                 Course               @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@index([userId, status, updatedAt])
+  @@map("user_course_progresses")
+}
+
+model ProjectSubmission {
+  id                   String                  @id @default(cuid())
+  userId               String
+  courseId             String
+  requirementId        String
+  note                 String?
+  status               ProjectSubmissionStatus @default(PENDING_REVIEW)
+  reviewerId           String?
+  reviewerNote         String?
+  reviewedAt           DateTime?
+  submittedAt          DateTime                @default(now())
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+
+  course               Course                  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  requirement          CourseProjectRequirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  files                ProjectSubmissionFile[]
+
+  @@index([courseId, status, submittedAt])
+  @@unique([userId, courseId])
+  @@index([userId, courseId, submittedAt])
+  @@map("project_submissions")
+}
+
+model ProjectSubmissionFile {
+  id            String            @id @default(cuid())
+  submissionId  String
+  filePath      String
+  storageKey    String?
+  originalName  String
+  mimeType      String?
+  fileSize      Int?
+  sortOrder     Int
+  createdAt     DateTime          @default(now())
+
+  submission    ProjectSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId, sortOrder])
+  @@map("project_submission_files")
+}
+
+model Certificate {
+  id              String   @id @default(cuid())
+  userId          String
+  courseId        String
+  certificateCode String   @unique
+  issuedAt        DateTime @default(now())
+  metadata        Json?
+  createdAt       DateTime @default(now())
+
+  course          Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@index([userId, issuedAt])
+  @@map("certificates")
 }
 
 enum AttemptSessionStatus {
