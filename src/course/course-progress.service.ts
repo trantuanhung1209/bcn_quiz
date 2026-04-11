@@ -128,7 +128,11 @@ export class CourseProgressService {
 
     let status: CourseProgressStatus = CourseProgressStatus.IN_PROGRESS;
 
-    if (topicMilestoneCompleted && requiresProjectApproval && !approvedProject) {
+    if (
+      topicMilestoneCompleted &&
+      requiresProjectApproval &&
+      !approvedProject
+    ) {
       status = CourseProgressStatus.PROJECT_PENDING_APPROVAL;
       progressPercent = 50;
     }
@@ -157,15 +161,16 @@ export class CourseProgressService {
         projectProgressPercent,
         progressPercent,
         status,
-        topicsCompletedAt:
-          topicMilestoneCompleted ? existing?.topicsCompletedAt ?? now : null,
+        topicsCompletedAt: topicMilestoneCompleted
+          ? (existing?.topicsCompletedAt ?? now)
+          : null,
         projectApprovedAt:
           status === CourseProgressStatus.COMPLETED && approvedProject
-            ? approvedProject.reviewedAt ?? now
-            : existing?.projectApprovedAt ?? null,
+            ? (approvedProject.reviewedAt ?? now)
+            : (existing?.projectApprovedAt ?? null),
         completedAt:
           status === CourseProgressStatus.COMPLETED
-            ? existing?.completedAt ?? now
+            ? (existing?.completedAt ?? now)
             : null,
       },
       create: {
@@ -176,7 +181,9 @@ export class CourseProgressService {
         progressPercent,
         status,
         topicsCompletedAt: topicMilestoneCompleted ? now : null,
-        projectApprovedAt: approvedProject ? approvedProject.reviewedAt ?? now : null,
+        projectApprovedAt: approvedProject
+          ? (approvedProject.reviewedAt ?? now)
+          : null,
         completedAt: status === CourseProgressStatus.COMPLETED ? now : null,
       },
     });
@@ -206,6 +213,18 @@ export class CourseProgressService {
           },
         },
       });
+
+      if (req && this.extractUserId(req) === userId) {
+        await this.profilesService.createTimelineEvent(req, {
+          eventType: 'COURSE_COMPLETE',
+          title: `Hoàn thành khóa học ${course.name}`,
+          metadata: {
+            courseId: courseId,
+            courseSlug: course.slug,
+            score: progress.progressPercent,
+          },
+        });
+      }
     }
 
     if (req && this.extractUserId(req) === userId) {

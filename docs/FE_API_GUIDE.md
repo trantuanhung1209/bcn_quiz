@@ -560,6 +560,7 @@ Chi tra ve chung chi sau khi course dat 100%.
   - Co the doi `note`, xoa file cu bang `removeFiles`, va them file moi bang `files`.
 8. Sau khi admin approve submission, refresh `GET /course/:id/progress/me` de thay 100%.
 9. Goi `GET /certificate/me` de lay du lieu chung chi.
+*(Lưu ý: Khi khoá học đạt 100% và chứng chỉ được cấp, backend sẽ tự động bắn một event `COURSE_COMPLETE` sang hệ thống Profiles để cập nhật hiển thị Timeline cho user).*
 
 Session flow (topic quiz):
 1. User chon topic -> `POST /topic/:topicId/session/start`.
