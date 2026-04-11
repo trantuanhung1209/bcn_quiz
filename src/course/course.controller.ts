@@ -9,40 +9,20 @@ import {
   Put,
   Query,
   Request,
-  UploadedFiles,
-  UseInterceptors,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import { extname } from 'path';
-import { memoryStorage } from 'multer';
 import type { Request as ExpressRequest } from 'express';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CourseService } from './course.service';
+import { CreateProjectSubmissionDto } from './dto/create-project-submission.dto';
 import { CreateCourseDto } from './dto/create-course.dto';
+import { CreateUploadSignatureDto } from './dto/create-upload-signature.dto';
 import { ListProjectSubmissionsQueryDto } from './dto/list-project-submissions-query.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { ReviewProjectSubmissionDto } from './dto/review-project-submission.dto';
+import { UpdateProjectSubmissionDto } from './dto/update-project-submission.dto';
 import { UpdateCourseTopicsDto } from './dto/update-course-topics.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
 import { UpsertCourseProjectDto } from './dto/upsert-course-project.dto';
-
-const storage = memoryStorage();
-
-const allowedExtensions = new Set(['.zip', '.rar', '.pdf', '.docx']);
-
-const fileFilter = (
-  _req: ExpressRequest,
-  file: Express.Multer.File,
-  cb: (error: Error | null, acceptFile: boolean) => void,
-) => {
-  const extension = extname(file.originalname).toLowerCase();
-  if (!allowedExtensions.has(extension)) {
-    cb(new Error('Only zip, rar, pdf, docx files are allowed'), false);
-    return;
-  }
-
-  cb(null, true);
-};
 
 @Controller('course')
 export class CourseController {
@@ -132,65 +112,32 @@ export class CourseController {
     return this.courseService.upsertProjectRequirement(id, data);
   }
 
-  @Post(':id/project-submission')
-  @UseInterceptors(
-    FileFieldsInterceptor(
-      [
-        { name: 'files', maxCount: 5 },
-      ],
-      {
-        storage,
-        fileFilter,
-        limits: {
-          fileSize: 20 * 1024 * 1024,
-        },
-      },
-    ),
-  )
-  async submitProject(
+  @Post(':id/upload/signature')
+  async createUploadSignature(
     @Param('id') id: string,
-    @UploadedFiles()
-    files: {
-      files?: Express.Multer.File[];
-    },
-    @Body('note') note: string | undefined,
+    @Body() data: CreateUploadSignatureDto,
     @Request() req: ExpressRequest,
   ) {
-    return this.courseService.submitProject(id, req, files, note);
+    return this.courseService.createUploadSignature(id, req, data);
+  }
+
+  @Post(':id/project-submission')
+  async submitProject(
+    @Param('id') id: string,
+    @Body() data: CreateProjectSubmissionDto,
+    @Request() req: ExpressRequest,
+  ) {
+    return this.courseService.submitProject(id, req, data);
   }
 
   @Patch(':id/project-submission/:submissionId')
-  @UseInterceptors(
-    FileFieldsInterceptor(
-      [{ name: 'files', maxCount: 5 }],
-      {
-        storage,
-        fileFilter,
-        limits: {
-          fileSize: 20 * 1024 * 1024,
-        },
-      },
-    ),
-  )
   async updateProjectSubmission(
     @Param('id') id: string,
     @Param('submissionId') submissionId: string,
-    @UploadedFiles()
-    files: {
-      files?: Express.Multer.File[];
-    },
-    @Body('note') note: string | undefined,
-    @Body('removeFiles') removeFiles: string | string[] | undefined,
+    @Body() data: UpdateProjectSubmissionDto,
     @Request() req: ExpressRequest,
   ) {
-    return this.courseService.updateProjectSubmission(
-      id,
-      submissionId,
-      req,
-      files,
-      note,
-      removeFiles,
-    );
+    return this.courseService.updateProjectSubmission(id, submissionId, req, data);
   }
 
   @Delete(':id/project-submission/:submissionId')

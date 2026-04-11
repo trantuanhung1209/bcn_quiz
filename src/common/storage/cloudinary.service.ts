@@ -5,6 +5,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import { v2 as cloudinary } from 'cloudinary';
+import type { Express } from 'express';
+import 'multer';
 
 export type UploadedCloudinaryFile = {
   secureUrl: string;
@@ -17,6 +19,9 @@ export type UploadedCloudinaryFile = {
 @Injectable()
 export class CloudinaryService {
   private readonly logger = new Logger(CloudinaryService.name);
+  private readonly cloudName: string;
+  private readonly apiKey: string;
+  private readonly apiSecret: string;
 
   constructor() {
     const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
@@ -29,12 +34,53 @@ export class CloudinaryService {
       );
     }
 
+    this.cloudName = cloudName;
+    this.apiKey = apiKey;
+    this.apiSecret = apiSecret;
+
     cloudinary.config({
-      cloud_name: cloudName,
-      api_key: apiKey,
-      api_secret: apiSecret,
+      cloud_name: this.cloudName,
+      api_key: this.apiKey,
+      api_secret: this.apiSecret,
       secure: true,
     });
+  }
+
+  getCloudinaryConfig() {
+    return {
+      cloudName: this.cloudName,
+      apiKey: this.apiKey,
+    };
+  }
+
+  createUploadSignature(params: {
+    timestamp: number;
+    folder: string;
+    publicId?: string;
+  }) {
+    const signingParams: Record<string, string | number> = {
+      timestamp: params.timestamp,
+      folder: params.folder,
+    };
+
+    if (params.publicId) {
+      signingParams.public_id = params.publicId;
+    }
+
+    const signature = cloudinary.utils.api_sign_request(
+      signingParams,
+      this.apiSecret,
+    );
+
+    return {
+      signature,
+      timestamp: params.timestamp,
+      folder: params.folder,
+      apiKey: this.apiKey,
+      cloudName: this.cloudName,
+      resourceType: 'auto' as const,
+      uploadUrl: `https://api.cloudinary.com/v1_1/${this.cloudName}/auto/upload`,
+    };
   }
 
   async uploadRawFile(

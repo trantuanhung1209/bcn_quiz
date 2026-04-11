@@ -8,10 +8,15 @@ import {
 } from '@nestjs/common';
 import { Prisma, ProjectSubmissionStatus } from '@prisma/client';
 import type { Request as ExpressRequest } from 'express';
+import { extname } from 'path';
 import { CreateCourseDto } from './dto/create-course.dto';
+import { CreateProjectSubmissionDto } from './dto/create-project-submission.dto';
+import { CreateUploadSignatureDto } from './dto/create-upload-signature.dto';
 import { ListProjectSubmissionsQueryDto } from './dto/list-project-submissions-query.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
+import { ProjectSubmissionFileMetadataDto } from './dto/project-submission-file-metadata.dto';
 import { ReviewDecision, ReviewProjectSubmissionDto } from './dto/review-project-submission.dto';
+import { UpdateProjectSubmissionDto } from './dto/update-project-submission.dto';
 import { UpdateCourseTopicsDto } from './dto/update-course-topics.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
 import { UpsertCourseProjectDto } from './dto/upsert-course-project.dto';
@@ -19,11 +24,23 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CourseProgressService } from './course-progress.service';
 import { CloudinaryService } from '../common/storage/cloudinary.service';
 
+const ALLOWED_UPLOAD_EXTENSIONS = new Set(['.zip', '.rar', '.pdf', '.docx']);
+const MAX_PROJECT_FILES = 5;
+const MAX_PROJECT_FILE_SIZE = 20 * 1024 * 1024;
+
 type ProjectSubmissionWithFiles = Prisma.ProjectSubmissionGetPayload<{
   include: {
     files: true;
   };
 }>;
+
+type ValidatedProjectFileMetadata = {
+  secureUrl: string;
+  publicId: string;
+  originalName: string;
+  mimeType?: string;
+  fileSize?: number;
+};
 
 @Injectable()
 export class CourseService {
@@ -313,15 +330,33 @@ export class CourseService {
     return requirement;
   }
 
+  async createUploadSignature(
+    courseId: string,
+    req: ExpressRequest,
+    dto: CreateUploadSignatureDto,
+  ) {
+    const userId = this.extractUserId(req);
+    const course = await this.ensureCourseExists(courseId);
+
+    if (!course.hasProject) {
+      throw new BadRequestException('This course does not require a project');
+    }
+
+    const folder = this.getProjectSubmissionFolder(courseId, userId);
+    const timestamp = Math.floor(Date.now() / 1000);
+    const publicId = dto.publicId?.trim() ? this.sanitizePublicId(dto.publicId) : undefined;
+
+    return this.cloudinaryService.createUploadSignature({
+      timestamp,
+      folder,
+      publicId,
+    });
+  }
+
   async submitProject(
     courseId: string,
     req: ExpressRequest,
-    files:
-      | {
-          files?: Express.Multer.File[];
-        }
-      | undefined,
-    note?: string,
+    data: CreateProjectSubmissionDto,
   ) {
     const userId = this.extractUserId(req);
     const course = await this.ensureCourseExists(courseId);
@@ -358,18 +393,8 @@ export class CourseService {
       );
     }
 
-    const uploadedFiles = files?.files ?? [];
-
-    if (uploadedFiles.length === 0) {
-      throw new BadRequestException('At least one file is required');
-    }
-
-    if (uploadedFiles.length > 5) {
-      throw new BadRequestException('A maximum of 5 files is allowed');
-    }
-
-    const uploadedCloudFiles = await this.uploadProjectFilesToCloudinary(
-      uploadedFiles,
+    const uploadedCloudFiles = this.normalizeAndValidateSubmissionFiles(
+      data.files,
       courseId,
       userId,
     );
@@ -382,7 +407,7 @@ export class CourseService {
           userId,
           courseId,
           requirementId: requirement.id,
-          note: note ?? null,
+          note: data.note ?? null,
           status: ProjectSubmissionStatus.PENDING_REVIEW,
           files: {
             create: uploadedCloudFiles.map((file, index) => ({
@@ -433,13 +458,7 @@ export class CourseService {
     courseId: string,
     submissionId: string,
     req: ExpressRequest,
-    files:
-      | {
-          files?: Express.Multer.File[];
-        }
-      | undefined,
-    note?: string,
-    removeFiles?: string | string[],
+    data: UpdateProjectSubmissionDto,
   ) {
     const userId = this.extractUserId(req);
 
@@ -462,15 +481,11 @@ export class CourseService {
       throw new BadRequestException('Only pending submissions can be updated');
     }
 
-    const uploadedFiles = files?.files ?? [];
-    const removeTargets = this.parseSubmissionFileTargets(removeFiles);
-
-    if (uploadedFiles.length > 5) {
-      throw new BadRequestException('A maximum of 5 files is allowed');
-    }
+    const uploadedFiles = data.files ?? [];
+    const removeTargets = this.normalizeRemoveTargets(data.removeFiles);
 
     const hasFileUpdate = uploadedFiles.length > 0 || removeTargets.length > 0;
-    const hasNoteUpdate = typeof note !== 'undefined';
+    const hasNoteUpdate = typeof data.note !== 'undefined';
 
     if (!hasFileUpdate && !hasNoteUpdate) {
       throw new BadRequestException('Provide files or note to update submission');
@@ -506,17 +521,17 @@ export class CourseService {
       throw new BadRequestException('At least one file is required');
     }
 
-    if (finalFileCount > 5) {
-      throw new BadRequestException('A maximum of 5 files is allowed');
+    if (finalFileCount > MAX_PROJECT_FILES) {
+      throw new BadRequestException(`A maximum of ${MAX_PROJECT_FILES} files is allowed`);
     }
 
-    const nextNote = hasNoteUpdate ? note ?? null : submission.note;
-    const data: Prisma.ProjectSubmissionUpdateInput = {
+    const nextNote = hasNoteUpdate ? data.note ?? null : submission.note;
+    const updateInput: Prisma.ProjectSubmissionUpdateInput = {
       note: nextNote,
     };
 
     const uploadedCloudFiles = hasFileUpdate
-      ? await this.uploadProjectFilesToCloudinary(uploadedFiles, courseId, userId)
+      ? this.normalizeAndValidateSubmissionFiles(uploadedFiles, courseId, userId)
       : [];
 
     let updated: ProjectSubmissionWithFiles;
@@ -525,7 +540,7 @@ export class CourseService {
       updated = await this.prisma.$transaction(async (tx) => {
         const updatedSubmission = await tx.projectSubmission.update({
           where: { id: submission.id },
-          data,
+          data: updateInput,
         });
 
         if (hasFileUpdate) {
@@ -755,43 +770,104 @@ export class CourseService {
     };
   }
 
-  private async uploadProjectFilesToCloudinary(
-    files: Express.Multer.File[],
+  private getProjectSubmissionFolder(courseId: string, userId: string): string {
+    const baseFolder = (process.env.CLOUDINARY_PROJECT_FOLDER ?? 'project-submissions')
+      .replace(/^\/+|\/+$/g, '');
+
+    return `${baseFolder}/${courseId}/${userId}`;
+  }
+
+  private sanitizePublicId(input: string): string {
+    const trimmed = input.trim();
+    const sanitized = trimmed.replace(/[^a-zA-Z0-9/_-]/g, '_').replace(/^\/+|\/+$/g, '');
+
+    if (!sanitized) {
+      throw new BadRequestException('publicId is invalid');
+    }
+
+    return sanitized;
+  }
+
+  private normalizeAndValidateSubmissionFiles(
+    files: ProjectSubmissionFileMetadataDto[],
     courseId: string,
     userId: string,
-  ): Promise<
-    Array<{
-      secureUrl: string;
-      publicId: string;
-      originalName: string;
-      mimeType: string;
-      fileSize: number;
-    }>
-  > {
-    const folder =
-      process.env.CLOUDINARY_PROJECT_FOLDER ??
-      `project-submissions/${courseId}/${userId}`;
+  ): ValidatedProjectFileMetadata[] {
+    if (files.length === 0) {
+      throw new BadRequestException('At least one file is required');
+    }
 
-    const uploads = files.map(async (file) => {
-      const baseName = file.originalname.replace(/\.[^.]+$/, '');
-      const sanitizedName = baseName.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const publicId = sanitizedName;
-      const uploaded = await this.cloudinaryService.uploadRawFile(
-        file,
-        folder,
-        publicId,
-      );
+    if (files.length > MAX_PROJECT_FILES) {
+      throw new BadRequestException(`A maximum of ${MAX_PROJECT_FILES} files is allowed`);
+    }
+
+    const folder = this.getProjectSubmissionFolder(courseId, userId);
+    const { cloudName } = this.cloudinaryService.getCloudinaryConfig();
+    const seenSecureUrls = new Set<string>();
+    const seenPublicIds = new Set<string>();
+
+    return files.map((file) => {
+      const secureUrl = file.secureUrl.trim();
+      const publicId = this.sanitizePublicId(file.publicId);
+      const originalName = file.originalName.trim();
+      const mimeType = file.mimeType.trim();
+      const fileSize = file.fileSize;
+
+      if (!originalName) {
+        throw new BadRequestException('originalName is required');
+      }
+
+      const extension = extname(originalName).toLowerCase();
+      if (!ALLOWED_UPLOAD_EXTENSIONS.has(extension)) {
+        throw new BadRequestException('Only zip, rar, pdf, docx files are allowed');
+      }
+
+      if (!mimeType) {
+        throw new BadRequestException('mimeType is required');
+      }
+
+      if (fileSize < 1 || fileSize > MAX_PROJECT_FILE_SIZE) {
+        throw new BadRequestException('File size must be between 1 byte and 20MB');
+      }
+
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(secureUrl);
+      } catch {
+        throw new BadRequestException(`Invalid secureUrl: ${secureUrl}`);
+      }
+
+      if (parsedUrl.protocol !== 'https:' || !parsedUrl.hostname.endsWith('res.cloudinary.com')) {
+        throw new BadRequestException('secureUrl must be a valid Cloudinary https URL');
+      }
+
+      if (!parsedUrl.pathname.includes(`/${cloudName}/`)) {
+        throw new BadRequestException('secureUrl does not belong to configured Cloudinary cloud');
+      }
+
+      if (!publicId.startsWith(`${folder}/`)) {
+        throw new BadRequestException('publicId does not belong to the expected course upload folder');
+      }
+
+      if (seenSecureUrls.has(secureUrl)) {
+        throw new BadRequestException('Duplicate secureUrl detected in files payload');
+      }
+
+      if (seenPublicIds.has(publicId)) {
+        throw new BadRequestException('Duplicate publicId detected in files payload');
+      }
+
+      seenSecureUrls.add(secureUrl);
+      seenPublicIds.add(publicId);
 
       return {
-        secureUrl: uploaded.secureUrl,
-        publicId: uploaded.publicId,
-        originalName: file.originalname,
-        mimeType: file.mimetype,
-        fileSize: file.size,
+        secureUrl,
+        publicId,
+        originalName,
+        mimeType,
+        fileSize,
       };
     });
-
-    return Promise.all(uploads);
   }
 
   private async deleteCloudinaryFiles(storageKeys: string[]): Promise<void> {
@@ -884,40 +960,11 @@ export class CourseService {
     return userId;
   }
 
-  private parseSubmissionFileTargets(rawTargets?: string | string[]): string[] {
-    if (typeof rawTargets === 'undefined') {
+  private normalizeRemoveTargets(rawTargets?: string[]): string[] {
+    if (!rawTargets) {
       return [];
     }
 
-    const values = Array.isArray(rawTargets) ? rawTargets : [rawTargets];
-    const targets: string[] = [];
-
-    for (const value of values) {
-      if (typeof value !== 'string') {
-        continue;
-      }
-
-      const trimmed = value.trim();
-      if (!trimmed) {
-        continue;
-      }
-
-      if (trimmed.startsWith('[')) {
-        try {
-          const parsed = JSON.parse(trimmed);
-          if (!Array.isArray(parsed) || parsed.some((item) => typeof item !== 'string')) {
-            throw new Error('Invalid removeFiles payload');
-          }
-          targets.push(...parsed.map((item) => item.trim()).filter((item) => item.length > 0));
-          continue;
-        } catch {
-          throw new BadRequestException('removeFiles must be a JSON array of strings');
-        }
-      }
-
-      targets.push(trimmed);
-    }
-
-    return [...new Set(targets)];
+    return [...new Set(rawTargets.map((item) => item.trim()).filter((item) => item.length > 0))];
   }
 }

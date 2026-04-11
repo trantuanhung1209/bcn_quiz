@@ -313,43 +313,178 @@ Luon nho rule hoan thanh course:
 4. `GET /course/:id/topics?page=1&limit=10`
 5. `GET /course/:id/progress/me`
 6. `GET /course/:id/project-submission/me`
-7. `POST /course/:id/project-submission` (multipart/form-data)
-8. `PATCH /course/:id/project-submission/:submissionId` (multipart/form-data)
+7. `POST /course/:id/upload/signature`
+8. `POST /course/:id/project-submission` (application/json)
+9. `PATCH /course/:id/project-submission/:submissionId` (application/json)
 9. `DELETE /course/:id/project-submission/:submissionId`
 
-Upload project su dung field `files` (1 -> 5 file):
+Upload project su dung direct upload Cloudinary + metadata submit:
 - Allowed extension: `.zip`, `.rar`, `.pdf`, `.docx`
 - Moi file toi da 20MB
 
-Field bo sung:
-- `note` (optional)
+Flow:
+1. FE goi `POST /course/:id/upload/signature` de lay `signature`, `timestamp`, `folder`, `apiKey`, `cloudName`, `uploadUrl`.
+2. FE upload truc tiep file len Cloudinary.
+3. Cloudinary tra ve `secure_url`, `public_id`.
+4. FE goi `POST /course/:id/project-submission` de submit metadata file.
 
 Luu y quan trong:
 - Moi user chi co 1 submission cho moi course.
 - Neu da tung submit, frontend dung endpoint `PATCH` de cap nhat thay vi submit moi.
 - Response submission tra ve dang `files: string[]` (danh sach URL file).
 
-Body mau cho `POST`/`PATCH`:
-- `multipart/form-data`
-- `files` (append nhieu lan)
-- `removeFiles` (optional, co the gui 1 field JSON array hoac append nhieu lan)
-- `note` (optional)
+Body mau cho `POST /course/:id/upload/signature`:
+
+```json
+{
+  "publicId": "my_project_v2"
+}
+```
+
+Response data mau cho `POST /course/:id/upload/signature`:
+
+```json
+{
+  "signature": "cd35bf0407a178577c157ec54fbb9cb3875fd75e",
+  "timestamp": 1775883082,
+  "folder": "project-submissions/<courseId>/<userId>",
+  "apiKey": "223812375436597",
+  "cloudName": "dav7n3cu7",
+  "resourceType": "auto",
+  "uploadUrl": "https://api.cloudinary.com/v1_1/dav7n3cu7/auto/upload"
+}
+```
+
+Body mau cho `POST /course/:id/project-submission`:
+
+```json
+{
+  "note": "Em nop bai lan dau",
+  "files": [
+    {
+      "secureUrl": "https://res.cloudinary.com/<cloud>/raw/upload/v123/project-submissions/<courseId>/<userId>/my_project_v2.zip",
+      "publicId": "project-submissions/<courseId>/<userId>/my_project_v2",
+      "originalName": "my_project_v2.zip",
+      "mimeType": "application/zip",
+      "fileSize": 1048576
+    }
+  ]
+}
+```
+
+Script FE upload len Cloudinary:
+
+```ts
+type UploadSignatureResponse = {
+  signature: string;
+  timestamp: number;
+  folder: string;
+  apiKey: string;
+  cloudName: string;
+  resourceType: 'auto';
+  uploadUrl: string;
+};
+
+type UploadedCloudinaryFile = {
+  secureUrl: string;
+  publicId: string;
+  originalName: string;
+  mimeType: string;
+  fileSize: number;
+};
+
+async function getUploadSignature(courseId: string, publicId?: string) {
+  const response = await fetch(`/course/${courseId}/upload/signature`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(publicId ? { publicId } : {}),
+  });
+
+  if (!response.ok) {
+    throw new Error('Cannot get Cloudinary signature');
+  }
+
+  const payload = await response.json();
+  return payload.data as UploadSignatureResponse;
+}
+
+async function uploadFileToCloudinary(file: File, signatureData: UploadSignatureResponse, publicId: string) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('api_key', signatureData.apiKey);
+  formData.append('timestamp', String(signatureData.timestamp));
+  formData.append('signature', signatureData.signature);
+  formData.append('folder', signatureData.folder);
+  formData.append('resource_type', signatureData.resourceType);
+  formData.append('public_id', publicId);
+
+  const uploadUrl =
+    signatureData.uploadUrl ||
+    `https://api.cloudinary.com/v1_1/${signatureData.cloudName}/auto/upload`;
+
+  const response = await fetch(uploadUrl, {
+    method: 'POST',
+    body: formData,
+  });
+
+  if (!response.ok) {
+    throw new Error('Upload to Cloudinary failed');
+  }
+
+  const result = await response.json();
+
+  return {
+    secureUrl: result.secure_url as string,
+    publicId: result.public_id as string,
+    originalName: file.name,
+    mimeType: file.type,
+    fileSize: file.size,
+  } satisfies UploadedCloudinaryFile;
+}
+
+// Usage
+// 1. FE chon file
+// 2. Tao publicId (vi du: `my_project_v2`)
+// 3. Lay signature
+// 4. Upload truc tiep len Cloudinary
+// 5. Gui metadata ve backend
+async function handleProjectFileUpload(courseId: string, file: File) {
+  const publicId = file.name.replace(/\.[^.]+$/, '');
+  const signatureData = await getUploadSignature(courseId, publicId);
+  const uploadedFile = await uploadFileToCloudinary(file, signatureData, publicId);
+
+  return uploadedFile;
+}
+```
+
+Body mau cho `PATCH /course/:id/project-submission/:submissionId`:
+
+```json
+{
+  "note": "Em cap nhat ban moi",
+  "removeFiles": [
+    "https://res.cloudinary.com/<cloud>/raw/upload/v123/project-submissions/<courseId>/<userId>/old-file.pdf"
+  ],
+  "files": [
+    {
+      "secureUrl": "https://res.cloudinary.com/<cloud>/raw/upload/v124/project-submissions/<courseId>/<userId>/new-file.zip",
+      "publicId": "project-submissions/<courseId>/<userId>/new-file",
+      "originalName": "new-file.zip",
+      "mimeType": "application/zip",
+      "fileSize": 2097152
+    }
+  ]
+}
+```
 
 Rule cho `PATCH /course/:id/project-submission/:submissionId`:
 - Mac dinh giu nguyen tat ca file cu neu khong truyen `removeFiles`.
 - `removeFiles` dung de xoa file cu (khuyen nghi gui theo URL file da co trong `files[]`).
-- `files` dung de upload them file moi.
+- `files` dung de them metadata file moi da upload len Cloudinary.
 - Co the vua xoa file cu, vua them file moi trong cung 1 request.
 - Tong so file sau cung phai nam trong khoang `1 -> 5`.
-
-Vi du `PATCH` (xoa 1 file cu + them 2 file moi):
-- `Content-Type: multipart/form-data`
-- fields text:
-  - `note`: `Em cap nhat ban moi`
-  - `removeFiles`: `["https://res.cloudinary.com/.../old-file.pdf"]`
-- files:
-  - `files`: `<new-1.zip>`
-  - `files`: `<new-2.docx>`
 
 ### 7.2 Admin APIs
 
