@@ -104,6 +104,15 @@ export class AuthService {
       `[refresh] forward to profiles auth/refresh hasCookie=${Boolean(cookies)} hasAuthorization=${Boolean(authorization)}`,
     );
 
+    const hasRefreshToken = cookies?.toLowerCase().includes('refresh') || authorization;
+    if (!hasRefreshToken) {
+      this.logger.warn('[refresh] Missing refresh token in cookies and authorization header');
+      throw new UnauthorizedException({
+        message: 'No refresh token provided',
+        code: 'MISSING_REFRESH_TOKEN',
+      });
+    }
+
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -139,6 +148,14 @@ export class AuthService {
         setCookies,
       };
     } catch (error) {
+      this.logger.warn('[refresh] Refresh token failed upstream');
+      if (error instanceof AxiosError && error.response?.status === 401) {
+        throw new UnauthorizedException({
+          message: 'Invalid or expired refresh token',
+          code: 'INVALID_REFRESH_TOKEN',
+          details: this.getUpstreamErrorDetails(error.response?.data),
+        });
+      }
       this.throwUpstreamAuthError(error, 'refresh', 'Refresh token failed');
     }
   }

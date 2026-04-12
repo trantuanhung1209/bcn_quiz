@@ -8,6 +8,7 @@ import {
   Response,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request as ExpressRequest } from 'express';
 import type { Response as ExpressResponse } from 'express';
 import { AuthService } from './auth.service';
@@ -23,6 +24,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('login')
   async login(
     @Body() body: LoginDto,
@@ -44,6 +46,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('2fa/verify/totp')
   async verifyTotp(
     @Body() body: VerifyTotpDto,
@@ -66,6 +69,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('refresh')
   async refresh(
     @Request() req: ExpressRequest,
