@@ -4,10 +4,13 @@ import { AxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { LoginDto } from './dto/login.dto';
 import { VerifyTotpDto } from './dto/verify-totp.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import { SendEmailOtpDto } from './dto/send-email-otp.dto';
 
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
+  private readonly baseUrl = process.env.PROFILES_API_BASE_URL;
 
   constructor(private readonly httpService: HttpService) {}
 
@@ -29,7 +32,7 @@ export class AuthService {
       }
 
       const response = await firstValueFrom(
-        this.httpService.post('https://profiles.uside.studio/auth/login', payload, {
+        this.httpService.post(`${this.baseUrl}/auth/login`, payload, {
           headers,
         }),
       );
@@ -74,7 +77,7 @@ export class AuthService {
 
       const response = await firstValueFrom(
         this.httpService.post(
-          'https://profiles.uside.studio/auth/2fa/verify/totp',
+          `${this.baseUrl}/auth/2fa/verify/totp`,
           payload,
           { headers },
         ),
@@ -93,6 +96,98 @@ export class AuthService {
       };
     } catch (error) {
       this.throwUpstreamAuthError(error, 'verifyTotp', 'TOTP verification failed');
+    }
+  }
+
+  async verifyEmail(
+    payload: VerifyEmailDto,
+    cookies?: string,
+    authorization?: string,
+  ): Promise<{ data: unknown; setCookies: string[] }> {
+    this.logger.log(
+      `[verifyEmail] forward to profiles auth/2fa/verify/email hasCookie=${Boolean(cookies)} hasAuthorization=${Boolean(authorization)}`,
+    );
+
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (cookies) {
+        headers.Cookie = cookies;
+      }
+
+      if (authorization) {
+        headers.Authorization = authorization;
+      }
+
+      const response = await firstValueFrom(
+        this.httpService.post(
+          `${this.baseUrl}/auth/2fa/verify/email`,
+          payload,
+          { headers },
+        ),
+      );
+
+      const setCookies =
+        (response.headers['set-cookie'] as string[] | undefined) ?? [];
+
+      this.logger.log(
+        `[verifyEmail] success status=${response.status} setCookieCount=${setCookies.length}`,
+      );
+
+      return {
+        data: response.data,
+        setCookies,
+      };
+    } catch (error) {
+      this.throwUpstreamAuthError(error, 'verifyEmail', 'Email verification failed');
+    }
+  }
+
+  async sendEmailOtp(
+    payload: SendEmailOtpDto,
+    cookies?: string,
+    authorization?: string,
+  ): Promise<{ data: unknown; setCookies: string[] }> {
+    this.logger.log(
+      `[sendEmailOtp] forward to profiles auth/2fa/send-email-otp hasCookie=${Boolean(cookies)} hasAuthorization=${Boolean(authorization)}`,
+    );
+
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      if (cookies) {
+        headers.Cookie = cookies;
+      }
+
+      if (authorization) {
+        headers.Authorization = authorization;
+      }
+
+      const response = await firstValueFrom(
+        this.httpService.post(
+          `${this.baseUrl}/auth/2fa/send-email-otp`,
+          payload,
+          { headers },
+        ),
+      );
+
+      const setCookies =
+        (response.headers['set-cookie'] as string[] | undefined) ?? [];
+
+      this.logger.log(
+        `[sendEmailOtp] success status=${response.status} setCookieCount=${setCookies.length}`,
+      );
+
+      return {
+        data: response.data,
+        setCookies,
+      };
+    } catch (error) {
+      this.throwUpstreamAuthError(error, 'sendEmailOtp', 'Send email OTP failed');
     }
   }
 
@@ -128,7 +223,7 @@ export class AuthService {
 
       const response = await firstValueFrom(
         this.httpService.post(
-          'https://profiles.uside.studio/auth/refresh',
+          `${this.baseUrl}/auth/refresh`,
           {},
           {
             headers,
@@ -183,7 +278,7 @@ export class AuthService {
 
       const response = await firstValueFrom(
         this.httpService.post(
-          'https://profiles.uside.studio/auth/logout',
+          `${this.baseUrl}/auth/logout`,
           {},
           {
             headers,
@@ -235,7 +330,7 @@ export class AuthService {
       }
 
       const response = await firstValueFrom(
-        this.httpService.get('https://profiles.uside.studio/auth/me', {
+        this.httpService.get(`${this.baseUrl}/auth/me`, {
           headers,
         }),
       );

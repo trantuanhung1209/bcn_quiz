@@ -16,6 +16,8 @@ import { BearerAuthGuard } from './guards/auth.guard';
 import { Public } from './decorators/public.decorator';
 import { LoginDto } from './dto/login.dto';
 import { VerifyTotpDto } from './dto/verify-totp.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
+import { SendEmailOtpDto } from './dto/send-email-otp.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -62,6 +64,52 @@ export class AuthController {
     if (setCookies.length > 0) {
       const normalized = this.normalizeSetCookies(setCookies, req);
       this.warnCookieOverwrite(req, normalized, 'verifyTotp');
+      res.setHeader('set-cookie', normalized);
+    }
+
+    return data;
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('2fa/verify/email')
+  async verifyEmail(
+    @Body() body: VerifyEmailDto,
+    @Request() req: ExpressRequest,
+    @Response({ passthrough: true }) res: ExpressResponse,
+  ) {
+    const { data, setCookies } = await this.authService.verifyEmail(
+      body,
+      req.headers.cookie,
+      req.headers.authorization,
+    );
+
+    if (setCookies.length > 0) {
+      const normalized = this.normalizeSetCookies(setCookies, req);
+      this.warnCookieOverwrite(req, normalized, 'verifyEmail');
+      res.setHeader('set-cookie', normalized);
+    }
+
+    return data;
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('2fa/send-email-otp')
+  async sendEmailOtp(
+    @Body() body: SendEmailOtpDto,
+    @Request() req: ExpressRequest,
+    @Response({ passthrough: true }) res: ExpressResponse,
+  ) {
+    const { data, setCookies } = await this.authService.sendEmailOtp(
+      body,
+      req.headers.cookie,
+      req.headers.authorization,
+    );
+
+    if (setCookies.length > 0) {
+      const normalized = this.normalizeSetCookies(setCookies, req);
+      this.warnCookieOverwrite(req, normalized, 'sendEmailOtp');
       res.setHeader('set-cookie', normalized);
     }
 

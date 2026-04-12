@@ -7,6 +7,7 @@ import { firstValueFrom } from 'rxjs';
 @Injectable()
 export class ProfilesService {
   private readonly logger = new Logger(ProfilesService.name);
+  private readonly baseUrl = process.env.PROFILES_API_BASE_URL || 'https://profiles.uside.studio';
 
   constructor(private readonly httpService: HttpService) {}
 
@@ -18,9 +19,7 @@ export class ProfilesService {
       return;
     }
 
-    const baseUrl =
-      process.env.PROFILES_API_BASE_URL ?? 'https://profiles.uside.studio';
-    const url = `${baseUrl.replace(/\/$/, '')}/users/me`;
+    const url = `${this.baseUrl.replace(/\/$/, '')}/users/me`;
 
     const authorization = req.headers.authorization;
     const cookies = req.headers.cookie;
@@ -74,9 +73,7 @@ export class ProfilesService {
       return;
     }
 
-    const baseUrl =
-      process.env.PROFILES_API_BASE_URL ?? 'https://profiles.uside.studio';
-    const url = `${baseUrl.replace(/\/$/, '')}/timeline-events`;
+    const url = `${this.baseUrl.replace(/\/$/, '')}/timeline-events`;
 
     const authorization = req.headers.authorization;
     const cookies = req.headers.cookie;
