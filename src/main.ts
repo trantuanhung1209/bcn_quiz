@@ -11,13 +11,35 @@ async function bootstrap() {
   app.use(helmet());
   app.use(compression());
 
-  const corsOrigins = (process.env.CORS_ORIGINS ?? '')
+  const envOrigins = (process.env.CORS_ORIGINS ?? '')
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
 
+  const allowedOrigins: (string | RegExp)[] = [
+    /^http:\/\/localhost:\d+$/, // Localhost React/Vite development
+    /^http:\/\/127\.0\.0\.1:\d+$/, // 127.0.0.1 development
+    /^https?:\/\/(.*\.)?uside\.studio$/, // uside.studio and its subdomains
+    ...envOrigins,
+  ];
+
   app.enableCors({
-    origin: corsOrigins.length > 0 ? corsOrigins : true,
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      // Cho phép request không có origin (như curl, postman, server-to-server)
+      if (!origin) return callback(null, true);
+
+      const isAllowed = allowedOrigins.some((allowedOrigin) =>
+        typeof allowedOrigin === 'string'
+          ? allowedOrigin === origin
+          : allowedOrigin.test(origin),
+      );
+
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        callback(new Error('Cross-Origin Request Blocked'));
+      }
+    },
     credentials: true,
   });
 
