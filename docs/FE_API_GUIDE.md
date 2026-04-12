@@ -22,12 +22,29 @@ Tai lieu nay tong hop toan bo API hien co de frontend tich hop nhanh.
 
 ## 2) Authentication
 
+### ⚡ New Security Features (Updated April 2026)
+1. **Rate Limiting (Chống Spam / Brute-force)**
+   - Các API Auth nhạy cảm (`/auth/login`, `/auth/refresh`, `/auth/2fa/...`) bị giới hạn tối đa **5 requests / 1 phút** trên mỗi IP.
+   - Nếu gọi quá giới hạn, server sẽ trả về HTTP Status `429 Too Many Requests`. FE cần bắt lỗi này để hiện thông báo "Vui lòng thao tác chậm lại".
+   - Các API còn lại có mức giới hạn chung là **100 requests / 1 phút**.
+2. **Refresh Token Flow**
+   - Nếu gọi API `/auth/refresh` mà KHÔNG CÓ `authorization` header hoặc cookie chứa `refresh`, server trả ngay lập tức mã `401` với detail code: `MISSING_REFRESH_TOKEN`.
+   - Nếu có refresh token nhưng đã hết hạn / không hợp lệ, server trả về `401` với detail code: `INVALID_REFRESH_TOKEN`.
+   - FE có thể dựa vào 2 mã lỗi này để chủ động **buộc user logout** hoặc chuyển hướng về trang `/login` thay vì thực hiện gọi refresh liên tục.
+3. **Hiệu suất (Performance)**
+   - Toàn bộ kết quả JSON trả về cho FE giờ đã được tự động nén `gzip` size siêu nhỏ. FE không cần làm gì thêm mặt config.
+
 ### Public APIs
 
 1. `POST /auth/login`
 2. `POST /auth/2fa/verify/totp`
-3. `POST /auth/refresh`
-4. `POST /auth/logout`
+3. `POST /auth/2fa/verify/email` (Mới)
+   - Body: `{ "code": "123456" }`
+4. `POST /auth/2fa/send-email-otp` (Mới)
+   - Body (Tuỳ chọn): `{ "email": "user@example.com" }`
+   - Gọi API này để hệ thống tạo OTP và gửi qua Email trước khi verify.
+5. `POST /auth/refresh`
+6. `POST /auth/logout`
 
 ### Protected APIs
 
