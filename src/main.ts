@@ -1,12 +1,16 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import helmet from 'helmet';
 import compression from 'compression';
 import { AppModule } from './app.module';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
+import { RequestLoggingInterceptor } from './common/logging/request-logging.interceptor';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const logger = app.get(WINSTON_MODULE_NEST_PROVIDER);
+  app.useLogger(logger);
 
   app.use(helmet());
   app.use(compression());
@@ -51,8 +55,21 @@ async function bootstrap() {
     }),
   );
 
-  app.useGlobalInterceptors(new ResponseInterceptor());
+  app.useGlobalInterceptors(app.get(RequestLoggingInterceptor), new ResponseInterceptor());
 
-  await app.listen(process.env.PORT ?? 3000);
+  const port = getRequiredPort();
+  await app.listen(port);
+  logger.log(`Application is running on port: ${port}`);
 }
+
+function getRequiredPort(): string {
+  const port = process.env.PORT;
+
+  if (!port) {
+    throw new Error('PORT environment variable is required');
+  }
+
+  return port;
+}
+
 bootstrap();
