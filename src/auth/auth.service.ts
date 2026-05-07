@@ -6,6 +6,7 @@ import { LoginDto } from './dto/login.dto';
 import { VerifyTotpDto } from './dto/verify-totp.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { SendEmailOtpDto } from './dto/send-email-otp.dto';
+import { appendBearerTokenAsCookie } from './auth-header.util';
 
 @Injectable()
 export class AuthService {
@@ -319,14 +320,21 @@ export class AuthService {
     try {
       const headers: Record<string, string> = {};
 
-      if (authorization) {
-        headers.Authorization = authorization;
-      } else if (token) {
-        headers.Authorization = `Bearer ${token}`;
+      const authHeader =
+        authorization ?? (token ? `Bearer ${token}` : undefined);
+
+      if (authHeader) {
+        headers.Authorization = authHeader;
       }
 
-      if (cookies) {
-        headers.Cookie = cookies;
+      const cookieHeader = appendBearerTokenAsCookie(
+        cookies,
+        authHeader,
+        'access_token',
+      );
+
+      if (cookieHeader) {
+        headers.Cookie = cookieHeader;
       }
 
       const response = await firstValueFrom(

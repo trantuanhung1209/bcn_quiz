@@ -9,6 +9,7 @@ import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { AuthService } from '../auth.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { extractBearerToken } from '../auth-header.util';
 
 @Injectable()
 export class BearerAuthGuard implements CanActivate {
@@ -33,7 +34,7 @@ export class BearerAuthGuard implements CanActivate {
 		const req = context.switchToHttp().getRequest<Request>();
 		const cookieHeader = req.headers.cookie ?? '';
 		const authorization = req.headers.authorization;
-		const bearerToken = this.extractBearerToken(authorization);
+		const bearerToken = extractBearerToken(authorization);
 		const cookieToken = this.extractCookieToken(cookieHeader);
 		const token = bearerToken ?? cookieToken;
 		const tokenSource = bearerToken ? 'bearer' : cookieToken ? 'cookie' : 'none';
@@ -65,15 +66,6 @@ export class BearerAuthGuard implements CanActivate {
 			);
 			throw new UnauthorizedException('Invalid token or unauthorized');
 		}
-	}
-
-	private extractBearerToken(authorization?: string): string | undefined {
-		if (!authorization?.startsWith('Bearer ')) {
-			return undefined;
-		}
-
-		const token = authorization.slice(7).trim();
-		return token.length > 0 ? token : undefined;
 	}
 
 	private extractCookieToken(cookieHeader: string): string | undefined {

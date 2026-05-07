@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { AxiosError } from 'axios';
 import type { Request as ExpressRequest } from 'express';
 import { firstValueFrom } from 'rxjs';
+import { appendBearerTokenAsCookie } from '../auth/auth-header.util';
 
 @Injectable()
 export class ProfilesService {
@@ -22,7 +23,11 @@ export class ProfilesService {
     const url = `${this.baseUrl.replace(/\/$/, '')}/users/me`;
 
     const authorization = req.headers.authorization;
-    const cookies = req.headers.cookie;
+    const cookies = appendBearerTokenAsCookie(
+      req.headers.cookie,
+      authorization,
+      'access_token',
+    );
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -76,7 +81,11 @@ export class ProfilesService {
     const url = `${this.baseUrl.replace(/\/$/, '')}/timeline-events`;
 
     const authorization = req.headers.authorization;
-    const cookies = req.headers.cookie;
+    const cookies = appendBearerTokenAsCookie(
+      req.headers.cookie,
+      authorization,
+      'access_token',
+    );
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
