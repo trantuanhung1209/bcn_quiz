@@ -26,7 +26,7 @@ export function createWinstonLoggerOptions(service: string): LoggerOptions {
           service,
           service_name: service,
         },
-        json: true,
+        json: false,
         batching: true,
         format: winston.format.json(),
         interval: Number(process.env.LOKI_BATCH_INTERVAL_SECONDS ?? 5),
