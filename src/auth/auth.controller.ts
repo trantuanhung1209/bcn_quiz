@@ -167,28 +167,34 @@ export class AuthController {
     setCookies: string[],
     req: ExpressRequest,
   ): string[] {
-    const host = req.headers.host ?? '';
-    const forwardedProto = req.headers['x-forwarded-proto'];
-    const isHttps = req.secure || forwardedProto === 'https';
-    const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1');
+    const origin = req.headers.origin ?? '';
+
+    // Detect if the request is coming FROM a localhost FE (origin-based),
+    // regardless of whether the backend itself is local or production.
+    const isLocalhostOrigin =
+      origin.includes('localhost') || origin.includes('127.0.0.1');
+
+    // FE is on HTTP (not HTTPS) when origin starts with http:// and is localhost.
+    const isLocalhostHttp =
+      isLocalhostOrigin && origin.startsWith('http://');
 
     return setCookies.map((cookie) => {
       let normalized = cookie;
 
-      if (isLocalhost) {
-        // Localhost has no subdomain concept — strip Domain so the cookie
-        // is accepted by the browser (Domain=.uside.studio would be rejected).
+      if (isLocalhostOrigin) {
+        // Strip Domain=.uside.studio — browser rejects cross-domain cookies for localhost.
         normalized = normalized.replace(/;\s*Domain=[^;]*/gi, '');
 
-        if (!isHttps) {
-          // HTTP localhost: SameSite=None requires Secure, downgrade both.
+        if (isLocalhostHttp) {
+          // HTTP localhost: browser rejects cookies with Secure flag or SameSite=None.
           normalized = normalized.replace(/;\s*Secure/gi, '');
           normalized = normalized.replace(/;\s*SameSite=None/gi, '; SameSite=Lax');
         }
+        // HTTPS localhost (Vite + mkcert): Secure is fine, SameSite=None is fine too.
       }
 
-      // Production: keep Domain=.uside.studio intact so the cookie is shared
-      // across all subdomains (quizzes.uside.studio, profiles.uside.studio, etc.)
+      // Production FE on *.uside.studio:
+      // keep Domain=.uside.studio intact so the cookie is shared across subdomains.
 
       return normalized;
     });
