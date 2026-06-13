@@ -10,9 +10,11 @@ datasource db {
 }
 
 model Topic {
-  id        String @id @default(cuid())
-  name      String
-  slug      String
+  id             String  @id @default(cuid())
+  name           String
+  slug           String
+  imageUrl       String?
+  imagePublicId  String?
 
   quizzes    Quiz[]
   attempts   QuizAttempt[]

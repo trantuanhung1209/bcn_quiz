@@ -16,6 +16,7 @@
         --primary-dark: #0f47bb;
         --success: #0f8a5f;
         --danger: #c0392b;
+        --warning: #b45309;
         --shadow: 0 18px 50px rgba(16, 32, 51, 0.12);
       }
 
@@ -56,6 +57,88 @@
         max-width: 760px;
       }
 
+      /* ── Tab navigation ── */
+      .tabs {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 18px;
+        border-bottom: 2px solid var(--border);
+      }
+
+      .tab-btn {
+        padding: 10px 20px;
+        border: none;
+        border-radius: 10px 10px 0 0;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        margin-bottom: -2px;
+        border-bottom: 2px solid transparent;
+        transition: color 0.15s, border-color 0.15s, background 0.15s;
+      }
+
+      .tab-btn:hover {
+        color: var(--primary);
+        background: rgba(22, 94, 240, 0.06);
+      }
+
+      .tab-btn.active {
+        color: var(--primary-dark);
+        border-bottom-color: var(--primary);
+        background: rgba(22, 94, 240, 0.06);
+      }
+
+      .tab-panel {
+        display: none;
+      }
+
+      .tab-panel.active {
+        display: block;
+      }
+
+      /* ── Flow description ── */
+      .flow-steps {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+        padding: 12px 16px;
+        background: rgba(22, 94, 240, 0.05);
+        border: 1px solid rgba(22, 94, 240, 0.15);
+        border-radius: 12px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .flow-steps .step {
+        background: var(--primary);
+        color: #fff;
+        border-radius: 50%;
+        width: 22px;
+        height: 22px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 700;
+        flex-shrink: 0;
+      }
+
+      .flow-steps .arrow {
+        color: var(--border);
+        font-size: 16px;
+      }
+
+      .flow-steps .step-label {
+        color: var(--text);
+        font-weight: 500;
+      }
+
+      /* ── Grid / cards ── */
       .grid {
         display: grid;
         grid-template-columns: 1.05fr 0.95fr;
@@ -203,6 +286,19 @@
         word-break: break-word;
       }
 
+      .preview-wrap {
+        margin-top: 10px;
+        text-align: center;
+      }
+
+      .preview-wrap img {
+        max-width: 100%;
+        max-height: 200px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        object-fit: contain;
+      }
+
       pre {
         margin: 12px 0 0;
         background: #0b1220;
@@ -219,8 +315,56 @@
         color: var(--muted);
       }
 
+      .badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .badge-admin {
+        background: rgba(180, 83, 9, 0.12);
+        color: var(--warning);
+      }
+
       a {
         color: var(--primary-dark);
+      }
+
+      /* ── API reference table ── */
+      .api-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+        margin-top: 8px;
+      }
+
+      .api-table th,
+      .api-table td {
+        text-align: left;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+      }
+
+      .api-table th {
+        background: #f1f4f9;
+        font-weight: 600;
+      }
+
+      .api-table tr:nth-child(even) td {
+        background: #fafbfc;
+      }
+
+      code {
+        background: rgba(22, 94, 240, 0.08);
+        color: var(--primary-dark);
+        padding: 1px 5px;
+        border-radius: 5px;
+        font-size: 12px;
+        font-family: "Fira Code", "Cascadia Code", ui-monospace, monospace;
       }
     </style>
   </head>
@@ -229,104 +373,409 @@
       <div class="hero">
         <h1>Cloudinary Upload Demo</h1>
         <p>
-          Demo HTML/JS thuần để test luồng: lấy signature từ backend, upload file trực tiếp lên Cloudinary,
+          Demo HTML/JS thuần để test luồng: lấy signature từ backend, upload file/ảnh trực tiếp lên Cloudinary,
           rồi submit metadata về backend.
         </p>
       </div>
 
-      <div class="grid">
-        <section class="card">
-          <h2>1. Thông tin</h2>
+      <!-- ── Tab navigation ── -->
+      <div class="tabs" role="tablist">
+        <button class="tab-btn active" role="tab" data-tab="tab-course" aria-selected="true">
+          📦 Course Project Upload
+        </button>
+        <button class="tab-btn" role="tab" data-tab="tab-topic" aria-selected="false">
+          🖼️ Topic Image Upload
+        </button>
+        <button class="tab-btn" role="tab" data-tab="tab-reference" aria-selected="false">
+          📄 API Reference
+        </button>
+      </div>
+
+      <!-- ══════════════════════════════════════════
+           TAB 1 — Course Project Upload (existing)
+      ══════════════════════════════════════════ -->
+      <div id="tab-course" class="tab-panel active">
+        <div class="flow-steps">
+          <span class="step">1</span>
+          <span class="step-label">Lấy signature từ <code>POST /course/:id/upload/signature</code></span>
+          <span class="arrow">→</span>
+          <span class="step">2</span>
+          <span class="step-label">Upload file lên Cloudinary</span>
+          <span class="arrow">→</span>
+          <span class="step">3</span>
+          <span class="step-label">Submit metadata về <code>POST /course/:id/project-submission</code></span>
+        </div>
+
+        <div class="grid">
+          <section class="card">
+            <h2>1. Thông tin</h2>
+
+            <div class="row">
+              <div class="field">
+                <label for="apiBase">Backend base URL</label>
+                <input id="apiBase" value="http://localhost:3000" />
+              </div>
+              <div class="field">
+                <label for="courseId">Course ID</label>
+                <input id="courseId" placeholder="cmnk10m9f0001fd1von13udku" />
+              </div>
+            </div>
+
+            <div class="row">
+              <div class="field">
+                <label for="authToken">Bearer token</label>
+                <input id="authToken" placeholder="dán access token vào đây" />
+              </div>
+              <div class="field">
+                <label for="publicId">publicId</label>
+                <input id="publicId" placeholder="my_project_v2" />
+              </div>
+            </div>
+
+            <div class="field">
+              <label for="note">Note</label>
+              <textarea id="note" placeholder="Em nop bai lan dau"></textarea>
+            </div>
+
+            <div class="field">
+              <label for="fileInput">Chọn file</label>
+              <input id="fileInput" type="file" accept=".zip,.rar,.pdf,.docx" />
+              <div class="hint">Hỗ trợ .zip, .rar, .pdf, .docx — tối đa 20 MB, tối đa 5 file.</div>
+            </div>
+
+            <div class="btns">
+              <button class="primary" id="btnUpload">Upload + Submit</button>
+              <button class="secondary" id="btnOnlySignature">Lấy signature</button>
+              <button class="ghost" id="btnClear">Clear output</button>
+            </div>
+
+            <div style="margin-top: 16px;">
+              <div id="status" class="status">Ready.</div>
+            </div>
+          </section>
+
+          <section class="card">
+            <h2>2. Kết quả</h2>
+            <div class="meta-list">
+              <div class="meta-item"><strong>Signature response</strong><div id="signatureBox" class="hint">Chưa có dữ liệu</div></div>
+              <div class="meta-item"><strong>Cloudinary response</strong><div id="cloudinaryBox" class="hint">Chưa có dữ liệu</div></div>
+              <div class="meta-item"><strong>Submit response</strong><div id="submitBox" class="hint">Chưa có dữ liệu</div></div>
+            </div>
+            <pre id="debugBox">// Debug output sẽ hiện ở đây</pre>
+          </section>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════
+           TAB 2 — Topic Image Upload (new)
+      ══════════════════════════════════════════ -->
+      <div id="tab-topic" class="tab-panel">
+        <div class="flow-steps">
+          <span class="step">1</span>
+          <span class="step-label">Lấy signature từ <code>POST /topic/upload/signature</code> <span class="badge badge-admin">admin</span></span>
+          <span class="arrow">→</span>
+          <span class="step">2</span>
+          <span class="step-label">Upload ảnh lên Cloudinary</span>
+          <span class="arrow">→</span>
+          <span class="step">3</span>
+          <span class="step-label">Lưu <code>imageUrl</code> + <code>imagePublicId</code> khi tạo/update topic</span>
+        </div>
+
+        <div class="grid">
+          <section class="card">
+            <h2>1. Thông tin</h2>
+
+            <div class="row">
+              <div class="field">
+                <label for="t-apiBase">Backend base URL</label>
+                <input id="t-apiBase" value="http://localhost:3000" />
+              </div>
+              <div class="field">
+                <label for="t-authToken">Bearer token <span class="badge badge-admin">admin</span></label>
+                <input id="t-authToken" placeholder="dán admin access token vào đây" />
+              </div>
+            </div>
+
+            <div class="row">
+              <div class="field">
+                <label for="t-publicId">publicId <span class="hint">(tuỳ chọn)</span></label>
+                <input id="t-publicId" placeholder="vd: javascript-basics" />
+                <div class="hint">Để trống để Cloudinary tự sinh tên.</div>
+              </div>
+              <div class="field">
+                <label for="t-imageInput">Chọn ảnh</label>
+                <input id="t-imageInput" type="file" accept="image/*" />
+                <div class="hint">jpg, png, webp, gif, svg... — tối đa 10 MB.</div>
+              </div>
+            </div>
+
+            <div style="border-top: 1px solid var(--border); margin: 4px 0 14px;"></div>
+            <p style="margin: 0 0 10px; font-size: 13px; color: var(--muted);">
+              Sau khi upload, dùng <code>imageUrl</code> + <code>imagePublicId</code> nhận được để gọi
+              <code>POST /topic</code> hoặc <code>PUT /topic/:id</code>.
+            </p>
+
+            <div class="row">
+              <div class="field">
+                <label for="t-topicId">Topic ID <span class="hint">(để update)</span></label>
+                <input id="t-topicId" placeholder="Để trống nếu đang tạo mới" />
+              </div>
+              <div class="field">
+                <label for="t-mode">Hành động sau upload</label>
+                <select id="t-mode" style="width:100%;border:1px solid var(--border);background:#fff;color:var(--text);border-radius:12px;padding:12px 14px;font:inherit;outline:none;">
+                  <option value="none">Chỉ upload ảnh (không gọi API topic)</option>
+                  <option value="create">Tạo topic mới (POST /topic)</option>
+                  <option value="update">Cập nhật topic (PUT /topic/:id)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Extra fields shown when create/update mode -->
+            <div id="t-extra-fields" style="display:none;">
+              <div class="row">
+                <div class="field">
+                  <label for="t-name">name</label>
+                  <input id="t-name" placeholder="JavaScript Basics" />
+                </div>
+                <div class="field">
+                  <label for="t-slug">slug</label>
+                  <input id="t-slug" placeholder="javascript-basics" />
+                </div>
+              </div>
+              <div class="field" id="t-courseId-field">
+                <label for="t-courseId">courseId <span class="hint">(bắt buộc khi tạo mới)</span></label>
+                <input id="t-courseId" placeholder="cmnk10m9f0001fd1von13udku" />
+              </div>
+            </div>
+
+            <div class="btns">
+              <button class="primary" id="t-btnUpload">Upload ảnh</button>
+              <button class="secondary" id="t-btnOnlySignature">Lấy signature</button>
+              <button class="ghost" id="t-btnClear">Clear output</button>
+            </div>
+
+            <div style="margin-top: 16px;">
+              <div id="t-status" class="status">Ready.</div>
+            </div>
+          </section>
+
+          <section class="card">
+            <h2>2. Kết quả</h2>
+            <div class="meta-list">
+              <div class="meta-item">
+                <strong>Signature response</strong>
+                <div id="t-signatureBox" class="hint">Chưa có dữ liệu</div>
+              </div>
+              <div class="meta-item">
+                <strong>Cloudinary response</strong>
+                <div id="t-cloudinaryBox" class="hint">Chưa có dữ liệu</div>
+                <div class="preview-wrap" id="t-previewWrap" style="display:none;">
+                  <img id="t-preview" src="" alt="Ảnh vừa upload" />
+                </div>
+              </div>
+              <div class="meta-item">
+                <strong>Topic API response</strong>
+                <div id="t-submitBox" class="hint">Chưa có dữ liệu</div>
+              </div>
+            </div>
+            <pre id="t-debugBox">// Debug output sẽ hiện ở đây</pre>
+          </section>
+        </div>
+
+        <!-- ── Payload reference ── -->
+        <section class="card" style="margin-top: 18px;">
+          <h2>📋 Payload tham khảo</h2>
+          <p class="hint" style="margin: 0 0 12px;">
+            Sau khi có <code>imageUrl</code> và <code>imagePublicId</code> từ Cloudinary, gửi chúng cùng các field khác:
+          </p>
 
           <div class="row">
-            <div class="field">
-              <label for="apiBase">Backend base URL</label>
-              <input id="apiBase" value="http://localhost:3000" />
+            <div>
+              <strong style="font-size: 13px;">Tạo topic mới — <code>POST /topic</code></strong>
+              <pre>{
+  "name": "JavaScript Basics",
+  "slug": "javascript-basics",
+  "courseId": "&lt;courseId&gt;",
+  "imageUrl": "https://res.cloudinary.com/...",
+  "imagePublicId": "topic-images/javascript-basics"
+}</pre>
             </div>
-            <div class="field">
-              <label for="courseId">Course ID</label>
-              <input id="courseId" placeholder="cmnk10m9f0001fd1von13udku" />
+            <div>
+              <strong style="font-size: 13px;">Cập nhật ảnh — <code>PUT /topic/:id</code></strong>
+              <pre>{
+  "imageUrl": "https://res.cloudinary.com/...",
+  "imagePublicId": "topic-images/javascript-basics-v2"
+}
+
+// Ảnh cũ sẽ tự động bị xóa
+// trên Cloudinary nếu publicId khác.</pre>
             </div>
           </div>
 
-          <div class="row">
-            <div class="field">
-              <label for="authToken">Bearer token</label>
-              <input id="authToken" placeholder="dán access token vào đây" />
-            </div>
-            <div class="field">
-              <label for="publicId">publicId</label>
-              <input id="publicId" placeholder="my_project_v2" />
-            </div>
-          </div>
-
-          <div class="field">
-            <label for="note">Note</label>
-            <textarea id="note" placeholder="Em nop bai lan dau"></textarea>
-          </div>
-
-          <div class="field">
-            <label for="fileInput">Chọn file</label>
-            <input id="fileInput" type="file" accept=".zip,.rar,.pdf,.docx" />
-            <div class="hint">Chọn một file rồi bấm Upload. Hỗ trợ .zip, .rar, .pdf, .docx.</div>
-          </div>
-
-          <div class="btns">
-            <button class="primary" id="btnUpload">Upload + Submit</button>
-            <button class="secondary" id="btnOnlySignature">Lấy signature</button>
-            <button class="ghost" id="btnClear">Clear output</button>
-          </div>
-
-          <div style="margin-top: 16px;">
-            <div id="status" class="status">Ready.</div>
-          </div>
-        </section>
-
-        <section class="card">
-          <h2>2. Kết quả</h2>
-          <div class="meta-list">
-            <div class="meta-item"><strong>Signature response</strong><div id="signatureBox" class="hint">Chưa có dữ liệu</div></div>
-            <div class="meta-item"><strong>Cloudinary response</strong><div id="cloudinaryBox" class="hint">Chưa có dữ liệu</div></div>
-            <div class="meta-item"><strong>Submit response</strong><div id="submitBox" class="hint">Chưa có dữ liệu</div></div>
-          </div>
-          <pre id="debugBox">// Debug output sẽ hiện ở đây</pre>
+          <p class="hint" style="margin: 14px 0 0;">
+            ⚠️ <code>imageUrl</code> và <code>imagePublicId</code> phải được gửi cùng nhau hoặc bỏ cả hai.
+            Gửi một trong hai sẽ bị báo lỗi <code>400 Bad Request</code>.
+          </p>
         </section>
       </div>
-    </div>
+
+      <!-- ══════════════════════════════════════════
+           TAB 3 — API Reference
+      ══════════════════════════════════════════ -->
+      <div id="tab-reference" class="tab-panel">
+        <div class="grid" style="grid-template-columns: 1fr;">
+
+          <section class="card">
+            <h2>🖼️ Topic Image — Signed Upload Flow</h2>
+
+            <h3 style="font-size: 14px; margin: 0 0 6px;">Step 1 — Lấy upload signature</h3>
+            <table class="api-table">
+              <tr><th>Method</th><td><code>POST</code></td></tr>
+              <tr><th>URL</th><td><code>/topic/upload/signature</code></td></tr>
+              <tr><th>Auth</th><td>Bearer token — <span class="badge badge-admin">admin</span></td></tr>
+              <tr><th>Body (JSON)</th><td><code>{ "publicId"?: "string" }</code> — tuỳ chọn, dùng để đặt tên file cố định</td></tr>
+            </table>
+
+            <strong style="display:block; margin: 10px 0 4px; font-size: 13px;">Response <code>data</code>:</strong>
+            <pre>{
+  "signature":    "abc123...",     // Chữ ký để xác thực upload
+  "timestamp":    1718000000,      // Unix timestamp
+  "folder":       "topic-images",  // Folder trên Cloudinary (từ env CLOUDINARY_TOPIC_IMAGE_FOLDER)
+  "apiKey":       "your_api_key",
+  "cloudName":    "your_cloud",
+  "resourceType": "auto",
+  "uploadUrl":    "https://api.cloudinary.com/v1_1/your_cloud/auto/upload"
+}</pre>
+
+            <h3 style="font-size: 14px; margin: 16px 0 6px;">Step 2 — Upload ảnh lên Cloudinary (client-side)</h3>
+            <p class="hint" style="margin: 0 0 8px;">Gửi <code>multipart/form-data</code> trực tiếp tới Cloudinary — không qua server.</p>
+            <table class="api-table">
+              <tr><th>URL</th><td><code>uploadUrl</code> nhận từ Step 1</td></tr>
+              <tr><th>Method</th><td><code>POST</code> — <code>multipart/form-data</code></td></tr>
+              <tr><th>file</th><td>File ảnh cần upload</td></tr>
+              <tr><th>api_key</th><td>Lấy từ signature response</td></tr>
+              <tr><th>timestamp</th><td>Lấy từ signature response</td></tr>
+              <tr><th>signature</th><td>Lấy từ signature response</td></tr>
+              <tr><th>folder</th><td>Lấy từ signature response</td></tr>
+              <tr><th>public_id</th><td>publicId bạn muốn đặt (phải khớp với lúc ký)</td></tr>
+            </table>
+
+            <strong style="display:block; margin: 10px 0 4px; font-size: 13px;">Lấy từ Cloudinary response:</strong>
+            <pre>{
+  "secure_url": "https://res.cloudinary.com/...",  // → imageUrl
+  "public_id":  "topic-images/javascript-basics"   // → imagePublicId
+}</pre>
+
+            <h3 style="font-size: 14px; margin: 16px 0 6px;">Step 3a — Tạo topic mới với ảnh</h3>
+            <table class="api-table">
+              <tr><th>Method</th><td><code>POST</code></td></tr>
+              <tr><th>URL</th><td><code>/topic</code></td></tr>
+              <tr><th>Auth</th><td>Bearer token — <span class="badge badge-admin">admin</span></td></tr>
+              <tr><th>Body</th><td>
+                <pre style="margin:4px 0;">{
+  "name": "JavaScript Basics",
+  "slug": "javascript-basics",
+  "courseId": "&lt;courseId&gt;",
+  "imageUrl": "https://res.cloudinary.com/...",
+  "imagePublicId": "topic-images/javascript-basics"
+}</pre>
+              </td></tr>
+            </table>
+
+            <h3 style="font-size: 14px; margin: 16px 0 6px;">Step 3b — Cập nhật ảnh cho topic có sẵn</h3>
+            <table class="api-table">
+              <tr><th>Method</th><td><code>PUT</code></td></tr>
+              <tr><th>URL</th><td><code>/topic/:id</code></td></tr>
+              <tr><th>Auth</th><td>Bearer token — <span class="badge badge-admin">admin</span></td></tr>
+              <tr><th>Body</th><td>
+                <pre style="margin:4px 0;">{
+  "imageUrl": "https://res.cloudinary.com/...",
+  "imagePublicId": "topic-images/javascript-basics-v2"
+}
+// ⚠️ Ảnh cũ sẽ tự động bị xóa khỏi Cloudinary</pre>
+              </td></tr>
+            </table>
+
+            <h3 style="font-size: 14px; margin: 16px 0 6px;">Validation rules</h3>
+            <table class="api-table">
+              <tr><th>Rule</th><th>Chi tiết</th></tr>
+              <tr><td><code>imageUrl</code> &amp; <code>imagePublicId</code></td><td>Phải gửi cùng nhau hoặc bỏ cả hai</td></tr>
+              <tr><td><code>imageUrl</code> format</td><td>Phải là HTTPS URL thuộc <code>res.cloudinary.com</code> và đúng cloud name</td></tr>
+              <tr><td>Auto cleanup</td><td>Update ảnh mới → ảnh cũ tự động bị xóa trên Cloudinary</td></tr>
+              <tr><td>Delete topic</td><td>Xóa topic → ảnh trên Cloudinary cũng bị xóa theo</td></tr>
+            </table>
+          </section>
+
+          <section class="card" style="margin-top: 18px;">
+            <h2>📦 Course Project — Signed Upload Flow</h2>
+
+            <h3 style="font-size: 14px; margin: 0 0 6px;">Step 1 — Lấy upload signature</h3>
+            <table class="api-table">
+              <tr><th>Method</th><td><code>POST</code></td></tr>
+              <tr><th>URL</th><td><code>/course/:id/upload/signature</code></td></tr>
+              <tr><th>Auth</th><td>Bearer token (user đã đăng nhập)</td></tr>
+              <tr><th>Body</th><td><code>{ "publicId"?: "string" }</code></td></tr>
+            </table>
+
+            <h3 style="font-size: 14px; margin: 16px 0 6px;">Step 2 — Upload file lên Cloudinary</h3>
+            <p class="hint" style="margin: 0 0 8px;">Tương tự Topic — gửi <code>multipart/form-data</code> thẳng tới Cloudinary.</p>
+            <table class="api-table">
+              <tr><th>Định dạng hỗ trợ</th><td><code>.zip</code>, <code>.rar</code>, <code>.pdf</code>, <code>.docx</code></td></tr>
+              <tr><th>Giới hạn</th><td>Tối đa 5 file, mỗi file tối đa 20 MB</td></tr>
+            </table>
+
+            <h3 style="font-size: 14px; margin: 16px 0 6px;">Step 3 — Submit metadata về backend</h3>
+            <table class="api-table">
+              <tr><th>Method</th><td><code>POST</code></td></tr>
+              <tr><th>URL</th><td><code>/course/:id/project-submission</code></td></tr>
+              <tr><th>Body</th><td>
+                <pre style="margin:4px 0;">{
+  "note": "Em nộp bài lần đầu",
+  "files": [{
+    "secureUrl":    "https://res.cloudinary.com/...",
+    "publicId":     "project-submissions/&lt;courseId&gt;/&lt;userId&gt;/my_project",
+    "originalName": "my_project.zip",
+    "mimeType":     "application/zip",
+    "fileSize":     204800
+  }]
+}</pre>
+              </td></tr>
+            </table>
+          </section>
+
+        </div>
+      </div>
+
+    </div><!-- /.wrap -->
 
     <script>
+      /* ──────────────────────────────────────────────
+         Utility helpers
+      ────────────────────────────────────────────── */
       const $ = (id) => document.getElementById(id);
 
-      const statusBox = $('status');
-      const debugBox = $('debugBox');
-      const signatureBox = $('signatureBox');
-      const cloudinaryBox = $('cloudinaryBox');
-      const submitBox = $('submitBox');
-
-      function setStatus(message, type = '') {
-        statusBox.className = `status ${type}`.trim();
-        statusBox.textContent = message;
+      function setStatus(boxId, message, type = '') {
+        const el = $(boxId);
+        el.className = `status ${type}`.trim();
+        el.textContent = message;
       }
 
       function setBox(el, value) {
         el.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
       }
 
-      function debug(value) {
-        debugBox.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+      function debug(boxId, value) {
+        $(boxId).textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
       }
 
       function describeError(error, stepLabel) {
         const message = error?.message || 'Unknown error';
-
         if (message.includes('Failed to fetch')) {
           return `${stepLabel}: Failed to fetch\n` +
             `- Kiem tra backend dang chay va dung apiBase\n` +
             `- Neu ban mo file bang file:// thi hay chay qua http://localhost\n` +
-            `- Neu FE chay https ma apiBase la http thi trinh duyet se chan mixed content\n` +
             `- Mo DevTools > Network de xem request nao bi chan`;
         }
-
         return `${stepLabel}: ${message}`;
       }
 
@@ -337,35 +786,33 @@
       async function fetchJson(url, options = {}) {
         const response = await fetch(url, options);
         const data = await response.json().catch(() => null);
-
         if (!response.ok) {
           const message = data?.message || response.statusText || 'Request failed';
-          throw new Error(message);
+          throw new Error(Array.isArray(message) ? message.join('; ') : message);
         }
-
         return data;
       }
 
-      async function getSignature({ apiBase, courseId, token, publicId }) {
-        const headers = {
-          'Content-Type': 'application/json',
-        };
+      /* ──────────────────────────────────────────────
+         Tab switching
+      ────────────────────────────────────────────── */
+      document.querySelectorAll('.tab-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tab-btn').forEach((b) => {
+            b.classList.remove('active');
+            b.setAttribute('aria-selected', 'false');
+          });
+          document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
 
-        if (token) {
-          headers.Authorization = `Bearer ${token}`;
-        }
-
-        const payload = publicId ? { publicId } : {};
-
-        const response = await fetchJson(`${apiBase}/course/${courseId}/upload/signature`, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(payload),
+          btn.classList.add('active');
+          btn.setAttribute('aria-selected', 'true');
+          document.getElementById(btn.dataset.tab).classList.add('active');
         });
+      });
 
-        return response.data;
-      }
-
+      /* ──────────────────────────────────────────────
+         Shared Cloudinary upload helper
+      ────────────────────────────────────────────── */
       async function uploadToCloudinary(file, signatureData, publicId) {
         const formData = new FormData();
         formData.append('file', file);
@@ -374,65 +821,57 @@
         formData.append('signature', signatureData.signature);
         formData.append('folder', signatureData.folder);
         formData.append('resource_type', signatureData.resourceType);
-        formData.append('public_id', publicId);
+        if (publicId) {
+          formData.append('public_id', publicId);
+        }
 
         const uploadUrl =
           signatureData.uploadUrl ||
           `https://api.cloudinary.com/v1_1/${signatureData.cloudName}/auto/upload`;
 
-        const response = await fetch(uploadUrl, {
-          method: 'POST',
-          body: formData,
-        });
-
+        const response = await fetch(uploadUrl, { method: 'POST', body: formData });
         const result = await response.json().catch(() => null);
 
         if (!response.ok) {
-          const message = result?.error?.message || 'Upload to Cloudinary failed';
-          throw new Error(message);
+          throw new Error(result?.error?.message || 'Upload to Cloudinary failed');
         }
 
-        return {
-          secureUrl: result.secure_url,
-          publicId: result.public_id,
-          originalName: file.name,
-          mimeType: file.type,
-          fileSize: file.size,
-        };
+        return result;
+      }
+
+      /* ══════════════════════════════════════════════
+         COURSE PROJECT — existing logic
+      ══════════════════════════════════════════════ */
+      async function getCourseSignature({ apiBase, courseId, token, publicId }) {
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const payload = publicId ? { publicId } : {};
+        const response = await fetchJson(`${apiBase}/course/${courseId}/upload/signature`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+        });
+        return response.data;
       }
 
       async function submitProject({ apiBase, courseId, token, note, files }) {
-        const headers = {
-          'Content-Type': 'application/json',
-        };
-
-        if (token) {
-          headers.Authorization = `Bearer ${token}`;
-        }
-
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers.Authorization = `Bearer ${token}`;
         const response = await fetchJson(`${apiBase}/course/${courseId}/project-submission`, {
           method: 'POST',
           headers,
           body: JSON.stringify({ note, files }),
         });
-
         return response.data;
       }
 
       $('btnClear').addEventListener('click', () => {
-        setStatus('Ready.');
-        setBox(signatureBox, 'Chưa có dữ liệu');
-        setBox(cloudinaryBox, 'Chưa có dữ liệu');
-        setBox(submitBox, 'Chưa có dữ liệu');
-        debug('// Debug output sẽ hiện ở đây');
+        setStatus('status', 'Ready.');
+        setBox($('signatureBox'), 'Chưa có dữ liệu');
+        setBox($('cloudinaryBox'), 'Chưa có dữ liệu');
+        setBox($('submitBox'), 'Chưa có dữ liệu');
+        debug('debugBox', '// Debug output sẽ hiện ở đây');
       });
-
-      if (window.location.protocol === 'file:') {
-        setStatus(
-          'Ban dang mo bang file://. Nen chay file qua http://localhost de tranh loi CORS/Failed to fetch.',
-          'err',
-        );
-      }
 
       $('btnOnlySignature').addEventListener('click', async () => {
         try {
@@ -442,17 +881,14 @@
           const file = $('fileInput').files[0];
           const publicIdInput = $('publicId').value.trim();
           const publicId = publicIdInput || (file ? getFileBaseName(file.name) : 'my_project_v2');
+          if (!courseId) throw new Error('Vui lòng nhập courseId');
 
-          if (!courseId) {
-            throw new Error('Vui lòng nhập courseId');
-          }
-
-          const signatureData = await getSignature({ apiBase, courseId, token, publicId });
-          setBox(signatureBox, signatureData);
-          setStatus('Lấy signature thành công.', 'ok');
-          debug(signatureData);
+          const signatureData = await getCourseSignature({ apiBase, courseId, token, publicId });
+          setBox($('signatureBox'), signatureData);
+          setStatus('status', 'Lấy signature thành công.', 'ok');
+          debug('debugBox', signatureData);
         } catch (error) {
-          setStatus(describeError(error, 'Lay signature loi'), 'err');
+          setStatus('status', describeError(error, 'Lay signature loi'), 'err');
         }
       });
 
@@ -466,40 +902,184 @@
           const publicIdInput = $('publicId').value.trim();
           const publicId = publicIdInput || (file ? getFileBaseName(file.name) : 'my_project_v2');
 
-          if (!courseId) {
-            throw new Error('Vui lòng nhập courseId');
-          }
+          if (!courseId) throw new Error('Vui lòng nhập courseId');
+          if (!file) throw new Error('Vui lòng chọn file');
 
-          if (!file) {
-            throw new Error('Vui lòng chọn file');
-          }
+          setStatus('status', 'Đang lấy signature...', '');
+          const signatureData = await getCourseSignature({ apiBase, courseId, token, publicId });
+          setBox($('signatureBox'), signatureData);
+          debug('debugBox', { step: 'signature', signatureData });
 
-          setStatus('Đang lấy signature...', '');
-          const signatureData = await getSignature({ apiBase, courseId, token, publicId });
-          setBox(signatureBox, signatureData);
-          debug({ step: 'signature', signatureData });
+          setStatus('status', 'Đang upload lên Cloudinary...', '');
+          const result = await uploadToCloudinary(file, signatureData, publicId);
+          const uploadedFile = {
+            secureUrl: result.secure_url,
+            publicId: result.public_id,
+            originalName: file.name,
+            mimeType: file.type,
+            fileSize: file.size,
+          };
+          setBox($('cloudinaryBox'), uploadedFile);
+          debug('debugBox', { step: 'cloudinary', uploadedFile });
 
-          setStatus('Đang upload lên Cloudinary...', '');
-          const uploadedFile = await uploadToCloudinary(file, signatureData, publicId);
-          setBox(cloudinaryBox, uploadedFile);
-          debug({ step: 'cloudinary', uploadedFile });
+          setStatus('status', 'Đang submit metadata về backend...', '');
+          const submitData = await submitProject({ apiBase, courseId, token, note, files: [uploadedFile] });
+          setBox($('submitBox'), submitData);
+          debug('debugBox', { step: 'submit', submitData });
 
-          setStatus('Đang submit metadata về backend...', '');
-          const submitData = await submitProject({
-            apiBase,
-            courseId,
-            token,
-            note,
-            files: [uploadedFile],
-          });
-          setBox(submitBox, submitData);
-          debug({ step: 'submit', submitData });
-
-          setStatus('Upload và submit thành công.', 'ok');
+          setStatus('status', 'Upload và submit thành công.', 'ok');
         } catch (error) {
-          setStatus(describeError(error, 'Upload flow loi'), 'err');
+          setStatus('status', describeError(error, 'Upload flow loi'), 'err');
         }
       });
+
+      /* ══════════════════════════════════════════════
+         TOPIC IMAGE — new logic
+      ══════════════════════════════════════════════ */
+      const tMode = $('t-mode');
+      const tExtraFields = $('t-extra-fields');
+      const tCourseIdField = $('t-courseId-field');
+
+      tMode.addEventListener('change', () => {
+        const val = tMode.value;
+        tExtraFields.style.display = val === 'none' ? 'none' : 'block';
+        tCourseIdField.style.display = val === 'create' ? 'block' : 'none';
+      });
+
+      async function getTopicSignature({ apiBase, token, publicId }) {
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const payload = publicId ? { publicId } : {};
+        const response = await fetchJson(`${apiBase}/topic/upload/signature`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(payload),
+        });
+        return response.data;
+      }
+
+      async function callTopicApi({ apiBase, token, mode, topicId, name, slug, courseId, imageUrl, imagePublicId }) {
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers.Authorization = `Bearer ${token}`;
+
+        const body = {};
+        if (name) body.name = name;
+        if (slug) body.slug = slug;
+        if (courseId) body.courseId = courseId;
+        body.imageUrl = imageUrl;
+        body.imagePublicId = imagePublicId;
+
+        if (mode === 'create') {
+          const response = await fetchJson(`${apiBase}/topic`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+          });
+          return response.data;
+        }
+
+        if (mode === 'update') {
+          if (!topicId) throw new Error('Vui lòng nhập Topic ID để cập nhật');
+          const response = await fetchJson(`${apiBase}/topic/${topicId}`, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify(body),
+          });
+          return response.data;
+        }
+
+        return null;
+      }
+
+      $('t-btnClear').addEventListener('click', () => {
+        setStatus('t-status', 'Ready.');
+        setBox($('t-signatureBox'), 'Chưa có dữ liệu');
+        setBox($('t-cloudinaryBox'), 'Chưa có dữ liệu');
+        setBox($('t-submitBox'), 'Chưa có dữ liệu');
+        debug('t-debugBox', '// Debug output sẽ hiện ở đây');
+        $('t-previewWrap').style.display = 'none';
+      });
+
+      $('t-btnOnlySignature').addEventListener('click', async () => {
+        try {
+          const apiBase = $('t-apiBase').value.trim();
+          const token = $('t-authToken').value.trim();
+          const file = $('t-imageInput').files[0];
+          const publicIdInput = $('t-publicId').value.trim();
+          const publicId = publicIdInput || (file ? getFileBaseName(file.name) : undefined);
+
+          if (!token) throw new Error('Vui lòng nhập Bearer token (admin)');
+
+          const signatureData = await getTopicSignature({ apiBase, token, publicId });
+          setBox($('t-signatureBox'), signatureData);
+          setStatus('t-status', 'Lấy signature thành công.', 'ok');
+          debug('t-debugBox', signatureData);
+        } catch (error) {
+          setStatus('t-status', describeError(error, 'Lay signature loi'), 'err');
+        }
+      });
+
+      $('t-btnUpload').addEventListener('click', async () => {
+        try {
+          const apiBase = $('t-apiBase').value.trim();
+          const token = $('t-authToken').value.trim();
+          const file = $('t-imageInput').files[0];
+          const publicIdInput = $('t-publicId').value.trim();
+          const publicId = publicIdInput || (file ? getFileBaseName(file.name) : undefined);
+          const mode = tMode.value;
+          const topicId = $('t-topicId').value.trim();
+          const name = $('t-name').value.trim();
+          const slug = $('t-slug').value.trim();
+          const courseId = $('t-courseId').value.trim();
+
+          if (!token) throw new Error('Vui lòng nhập Bearer token (admin)');
+          if (!file) throw new Error('Vui lòng chọn ảnh');
+          if (mode === 'create' && !courseId) throw new Error('Vui lòng nhập courseId để tạo topic');
+          if (mode === 'update' && !topicId) throw new Error('Vui lòng nhập Topic ID để cập nhật');
+
+          // Step 1: signature
+          setStatus('t-status', 'Bước 1 — Đang lấy signature...', '');
+          const signatureData = await getTopicSignature({ apiBase, token, publicId });
+          setBox($('t-signatureBox'), signatureData);
+          debug('t-debugBox', { step: 'signature', signatureData });
+
+          // Step 2: upload to Cloudinary
+          setStatus('t-status', 'Bước 2 — Đang upload ảnh lên Cloudinary...', '');
+          const result = await uploadToCloudinary(file, signatureData, publicId);
+          const imageUrl = result.secure_url;
+          const imagePublicId = result.public_id;
+
+          setBox($('t-cloudinaryBox'), { imageUrl, imagePublicId, format: result.format, bytes: result.bytes });
+          debug('t-debugBox', { step: 'cloudinary', result });
+
+          // Show image preview
+          $('t-preview').src = imageUrl;
+          $('t-previewWrap').style.display = 'block';
+
+          if (mode === 'none') {
+            setStatus('t-status', 'Upload ảnh thành công. Copy imageUrl và imagePublicId ở trên để dùng.', 'ok');
+            return;
+          }
+
+          // Step 3: call topic API
+          const label = mode === 'create' ? 'tạo topic' : 'cập nhật topic';
+          setStatus('t-status', `Bước 3 — Đang ${label}...`, '');
+          const topicData = await callTopicApi({ apiBase, token, mode, topicId, name, slug, courseId, imageUrl, imagePublicId });
+          setBox($('t-submitBox'), topicData);
+          debug('t-debugBox', { step: 'topic-api', topicData });
+
+          setStatus('t-status', `Upload và ${label} thành công.`, 'ok');
+        } catch (error) {
+          setStatus('t-status', describeError(error, 'Topic image upload loi'), 'err');
+        }
+      });
+
+      /* ── file:// warning ── */
+      if (window.location.protocol === 'file:') {
+        ['status', 't-status'].forEach((id) => {
+          setStatus(id, 'Ban dang mo bang file://. Nen chay qua http://localhost de tranh loi CORS.', 'err');
+        });
+      }
     </script>
   </body>
 </html>

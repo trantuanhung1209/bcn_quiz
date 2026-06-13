@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, IsUrl } from 'class-validator';
 
 export class UpdateTopicDto {
   @IsString()
@@ -8,4 +8,12 @@ export class UpdateTopicDto {
   @IsString()
   @IsOptional()
   slug?: string;
+
+  @IsOptional()
+  @IsUrl({ protocols: ['https'], require_tld: true })
+  imageUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  imagePublicId?: string;
 }

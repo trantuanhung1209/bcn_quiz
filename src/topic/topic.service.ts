@@ -1,12 +1,16 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CloudinaryService } from '../common/storage/cloudinary.service';
 import { CreateTopicDto } from './dto/create-topic.dto';
 import { UpdateTopicDto } from './dto/update-topic.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
+import { CreateUploadSignatureDto } from './dto/create-upload-signature.dto';
 
 type RawQuiz = {
   id: string;
@@ -64,7 +68,12 @@ function toRawQuiz(quiz: any): RawQuiz {
 
 @Injectable()
 export class TopicService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(TopicService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cloudinaryService: CloudinaryService,
+  ) {}
 
   async getQuizzesByTopicId(topicId: string, query: PaginationQueryDto) {
     await this.ensureTopicExists(topicId);
@@ -202,11 +211,17 @@ export class TopicService {
     await this.ensureSlugUniqueInCourse(data.courseId, data.slug);
     await this.ensureCourseExists(data.courseId);
 
+    if (data.imageUrl || data.imagePublicId) {
+      this.validateImageFields(data.imageUrl, data.imagePublicId);
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const topic = await tx.topic.create({
         data: {
           name: data.name,
           slug: data.slug,
+          imageUrl: data.imageUrl ?? null,
+          imagePublicId: data.imagePublicId ?? null,
         },
       });
 
@@ -237,18 +252,63 @@ export class TopicService {
       await this.ensureSlugUniqueForLinkedCourses(id, data.slug);
     }
 
+    if (data.imageUrl || data.imagePublicId) {
+      this.validateImageFields(data.imageUrl, data.imagePublicId);
+    }
+
+    // If a new image is provided, delete the old one from Cloudinary
+    if (data.imagePublicId) {
+      const existing = await this.prisma.topic.findUnique({
+        where: { id },
+        select: { imagePublicId: true },
+      });
+
+      if (existing?.imagePublicId && existing.imagePublicId !== data.imagePublicId) {
+        await this.deleteCloudinaryImage(existing.imagePublicId);
+      }
+    }
+
     return this.prisma.topic.update({
       where: { id },
-      data,
+      data: {
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.slug !== undefined && { slug: data.slug }),
+        ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
+        ...(data.imagePublicId !== undefined && { imagePublicId: data.imagePublicId }),
+      },
     });
   }
 
   async deleteTopic(id: string) {
-    await this.ensureTopicExists(id);
-
-    return this.prisma.topic.delete({
+    const topic = await this.prisma.topic.findUnique({
       where: { id },
+      select: { id: true, imagePublicId: true },
     });
+
+    if (!topic) {
+      throw new NotFoundException(`Topic with id '${id}' was not found`);
+    }
+
+    await this.prisma.topic.delete({ where: { id } });
+
+    if (topic.imagePublicId) {
+      await this.deleteCloudinaryImage(topic.imagePublicId);
+    }
+
+    return { id, deleted: true };
+  }
+
+  createUploadSignature(dto: CreateUploadSignatureDto) {
+    const folder = (process.env.CLOUDINARY_TOPIC_IMAGE_FOLDER ?? 'topic-images').replace(
+      /^\/+|\/+$/g,
+      '',
+    );
+    const timestamp = Math.floor(Date.now() / 1000);
+    const publicId = dto.publicId?.trim()
+      ? this.sanitizePublicId(dto.publicId)
+      : undefined;
+
+    return this.cloudinaryService.createUploadSignature({ timestamp, folder, publicId });
   }
 
   private async ensureSlugUniqueInCourse(
@@ -304,6 +364,49 @@ export class TopicService {
 
     if (!existing) {
       throw new NotFoundException(`Course with id '${id}' was not found`);
+    }
+  }
+
+  private validateImageFields(imageUrl?: string, imagePublicId?: string): void {
+    if ((imageUrl && !imagePublicId) || (!imageUrl && imagePublicId)) {
+      throw new BadRequestException('imageUrl and imagePublicId must be provided together');
+    }
+
+    if (imageUrl) {
+      const { cloudName } = this.cloudinaryService.getCloudinaryConfig();
+      let parsed: URL;
+      try {
+        parsed = new URL(imageUrl);
+      } catch {
+        throw new BadRequestException('imageUrl is not a valid URL');
+      }
+
+      if (parsed.protocol !== 'https:' || !parsed.hostname.endsWith('res.cloudinary.com')) {
+        throw new BadRequestException('imageUrl must be a valid Cloudinary https URL');
+      }
+
+      if (!parsed.pathname.includes(`/${cloudName}/`)) {
+        throw new BadRequestException('imageUrl does not belong to the configured Cloudinary cloud');
+      }
+    }
+  }
+
+  private sanitizePublicId(input: string): string {
+    const trimmed = input.trim();
+    const sanitized = trimmed.replace(/[^a-zA-Z0-9/_-]/g, '_').replace(/^\/+|\/+$/g, '');
+
+    if (!sanitized) {
+      throw new BadRequestException('publicId is invalid');
+    }
+
+    return sanitized;
+  }
+
+  private async deleteCloudinaryImage(publicId: string): Promise<void> {
+    try {
+      await this.cloudinaryService.deleteRawFile(publicId);
+    } catch {
+      this.logger.warn(`Failed to delete Cloudinary image '${publicId}'`);
     }
   }
 }

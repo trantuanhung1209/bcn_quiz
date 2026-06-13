@@ -12,6 +12,7 @@ import { TopicService } from './topic.service';
 import { CreateTopicDto } from './dto/create-topic.dto';
 import { UpdateTopicDto } from './dto/update-topic.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
+import { CreateUploadSignatureDto } from './dto/create-upload-signature.dto';
 import { Roles } from 'src/auth/decorators/roles.decorator';
 
 @Controller('topic')
@@ -47,6 +48,12 @@ export class TopicController {
   @Get('slug/:slug')
   async getTopicBySlug(@Param('slug') slug: string) {
     return this.topicService.getTopicBySlug(slug);
+  }
+
+  @Roles('admin')
+  @Post('upload/signature')
+  async createUploadSignature(@Body() dto: CreateUploadSignatureDto) {
+    return this.topicService.createUploadSignature(dto);
   }
 
   @Roles('admin')
