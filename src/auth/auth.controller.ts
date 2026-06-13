@@ -167,26 +167,28 @@ export class AuthController {
     setCookies: string[],
     req: ExpressRequest,
   ): string[] {
-    if (process.env.NODE_ENV === 'production') {
-      return setCookies;
-    }
-
     const host = req.headers.host ?? '';
     const forwardedProto = req.headers['x-forwarded-proto'];
     const isHttps = req.secure || forwardedProto === 'https';
     const isLocalhost = host.includes('localhost') || host.includes('127.0.0.1');
 
-    if (!isLocalhost) {
-      return setCookies;
-    }
-
     return setCookies.map((cookie) => {
-      let normalized = cookie.replace(/;\s*Domain=[^;]*/gi, '');
+      let normalized = cookie;
 
-      if (!isHttps) {
-        normalized = normalized.replace(/;\s*Secure/gi, '');
-        normalized = normalized.replace(/;\s*SameSite=None/gi, '; SameSite=Lax');
+      if (isLocalhost) {
+        // Localhost has no subdomain concept — strip Domain so the cookie
+        // is accepted by the browser (Domain=.uside.studio would be rejected).
+        normalized = normalized.replace(/;\s*Domain=[^;]*/gi, '');
+
+        if (!isHttps) {
+          // HTTP localhost: SameSite=None requires Secure, downgrade both.
+          normalized = normalized.replace(/;\s*Secure/gi, '');
+          normalized = normalized.replace(/;\s*SameSite=None/gi, '; SameSite=Lax');
+        }
       }
+
+      // Production: keep Domain=.uside.studio intact so the cookie is shared
+      // across all subdomains (quizzes.uside.studio, profiles.uside.studio, etc.)
 
       return normalized;
     });
