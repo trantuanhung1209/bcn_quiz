@@ -82,7 +82,7 @@ export class TopicService {
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.quiz.findMany({
         where: {
           topicId,
@@ -137,7 +137,7 @@ export class TopicService {
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.topic.findMany({
         skip,
         take: limit,

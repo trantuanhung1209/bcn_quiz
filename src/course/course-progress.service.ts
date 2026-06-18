@@ -36,7 +36,7 @@ export class CourseProgressService {
     courseId: string,
     req?: ExpressRequest,
   ): Promise<void> {
-    const [course, existing] = await this.prisma.$transaction([
+    const [course, existing] = await Promise.all([
       this.prisma.course.findUnique({
         where: { id: courseId },
         include: {

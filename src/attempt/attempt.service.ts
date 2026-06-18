@@ -359,7 +359,7 @@ export class AttemptService {
       ...(query.quizId ? { quizId: query.quizId } : {}),
     };
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.quizAttempt.findMany({
         where,
         skip,
@@ -442,7 +442,7 @@ export class AttemptService {
   async getMyProgress(req: ExpressRequest) {
     const userId = this.extractUserId(req);
 
-    const [attemptSummary, topicProgress] = await this.prisma.$transaction([
+    const [attemptSummary, topicProgress] = await Promise.all([
       this.prisma.quizAttempt.aggregate({
         where: { userId },
         _count: {
@@ -482,7 +482,7 @@ export class AttemptService {
     const userId = this.extractUserId(req);
 
     const [topic, progress, quizzesInTopic, attemptsInTopic, recentAttempts] =
-      await this.prisma.$transaction([
+      await Promise.all([
       this.prisma.topic.findUnique({
         where: { id: topicId },
         select: {

@@ -141,7 +141,7 @@ export class QuizService {
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
 
-    const [quizzes, total] = await this.prisma.$transaction([
+    const [quizzes, total] = await Promise.all([
       this.prisma.quiz.findMany({
         skip,
         take: limit,

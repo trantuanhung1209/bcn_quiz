@@ -57,7 +57,7 @@ export class CourseService {
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.course.findMany({
         skip,
         take: limit,
@@ -146,7 +146,7 @@ export class CourseService {
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
 
-    const [items, total] = await this.prisma.$transaction([
+    const [items, total] = await Promise.all([
       this.prisma.courseTopic.findMany({
         where: { courseId },
         skip,
@@ -725,7 +725,7 @@ export class CourseService {
 
     await this.courseProgressService.evaluateCourseProgress(userId, courseId, req);
 
-    const [progress, latestSubmission] = await this.prisma.$transaction([
+    const [progress, latestSubmission] = await Promise.all([
       this.prisma.userCourseProgress.findUnique({
         where: {
           userId_courseId: {
