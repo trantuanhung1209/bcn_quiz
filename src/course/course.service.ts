@@ -189,6 +189,10 @@ export class CourseService {
   async createCourse(data: CreateCourseDto) {
     await this.ensureCourseSlugUnique(data.slug);
 
+    if (data.imageUrl || data.imagePublicId) {
+      this.validateCourseImageFields(data.imageUrl, data.imagePublicId);
+    }
+
     const hasProject = Boolean(data.hasProject);
 
     const topicWeight = hasProject ? 50 : 100;
@@ -199,6 +203,8 @@ export class CourseService {
         name: data.name,
         slug: data.slug,
         description: data.description,
+        imageUrl: data.imageUrl ?? null,
+        imagePublicId: data.imagePublicId ?? null,
         hasProject,
         topicWeight: data.topicWeight ?? topicWeight,
         projectWeight: data.projectWeight ?? projectWeight,
@@ -213,28 +219,75 @@ export class CourseService {
       await this.ensureCourseSlugUnique(data.slug, id);
     }
 
+    if (data.imageUrl || data.imagePublicId) {
+      this.validateCourseImageFields(data.imageUrl, data.imagePublicId);
+    }
+
+    // Nếu có ảnh mới khác ảnh cũ thì xoá ảnh cũ trên Cloudinary
+    if (data.imagePublicId) {
+      const existing = await this.prisma.course.findUnique({
+        where: { id },
+        select: { imagePublicId: true },
+      });
+
+      if (existing?.imagePublicId && existing.imagePublicId !== data.imagePublicId) {
+        await this.deleteCourseImage(existing.imagePublicId);
+      }
+    }
+
     const hasProject = data.hasProject;
 
     return this.prisma.course.update({
       where: { id },
       data: {
-        ...data,
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.slug !== undefined && { slug: data.slug }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
+        ...(data.imagePublicId !== undefined && { imagePublicId: data.imagePublicId }),
         ...(typeof hasProject === 'boolean'
           ? {
+              hasProject,
               topicWeight: data.topicWeight ?? (hasProject ? 50 : 100),
               projectWeight: data.projectWeight ?? (hasProject ? 50 : 0),
             }
           : {}),
+        ...(data.topicWeight !== undefined && typeof hasProject !== 'boolean' && { topicWeight: data.topicWeight }),
+        ...(data.projectWeight !== undefined && typeof hasProject !== 'boolean' && { projectWeight: data.projectWeight }),
       },
     });
   }
 
   async deleteCourse(id: string) {
-    await this.ensureCourseExists(id);
-
-    return this.prisma.course.delete({
+    const course = await this.prisma.course.findUnique({
       where: { id },
+      select: { id: true, imagePublicId: true },
     });
+
+    if (!course) {
+      throw new NotFoundException(`Course with id '${id}' was not found`);
+    }
+
+    await this.prisma.course.delete({ where: { id } });
+
+    if (course.imagePublicId) {
+      await this.deleteCourseImage(course.imagePublicId);
+    }
+
+    return { id, deleted: true };
+  }
+
+  createImageUploadSignature(dto: CreateUploadSignatureDto) {
+    const folder = (process.env.CLOUDINARY_COURSE_IMAGE_FOLDER ?? 'course-images').replace(
+      /^\/+|\/+$/g,
+      '',
+    );
+    const timestamp = Math.floor(Date.now() / 1000);
+    const publicId = dto.publicId?.trim()
+      ? this.sanitizeCoursePublicId(dto.publicId)
+      : undefined;
+
+    return this.cloudinaryService.createUploadSignature({ timestamp, folder, publicId });
   }
 
   async updateCourseTopics(courseId: string, data: UpdateCourseTopicsDto) {
@@ -966,5 +1019,48 @@ export class CourseService {
     }
 
     return [...new Set(rawTargets.map((item) => item.trim()).filter((item) => item.length > 0))];
+  }
+
+  private validateCourseImageFields(imageUrl?: string, imagePublicId?: string): void {
+    if ((imageUrl && !imagePublicId) || (!imageUrl && imagePublicId)) {
+      throw new BadRequestException('imageUrl and imagePublicId must be provided together');
+    }
+
+    if (imageUrl) {
+      const { cloudName } = this.cloudinaryService.getCloudinaryConfig();
+      let parsed: URL;
+      try {
+        parsed = new URL(imageUrl);
+      } catch {
+        throw new BadRequestException('imageUrl is not a valid URL');
+      }
+
+      if (parsed.protocol !== 'https:' || !parsed.hostname.endsWith('res.cloudinary.com')) {
+        throw new BadRequestException('imageUrl must be a valid Cloudinary https URL');
+      }
+
+      if (!parsed.pathname.includes(`/${cloudName}/`)) {
+        throw new BadRequestException('imageUrl does not belong to the configured Cloudinary cloud');
+      }
+    }
+  }
+
+  private sanitizeCoursePublicId(input: string): string {
+    const trimmed = input.trim();
+    const sanitized = trimmed.replace(/[^a-zA-Z0-9/_-]/g, '_').replace(/^\/+|\/+$/g, '');
+
+    if (!sanitized) {
+      throw new BadRequestException('publicId is invalid');
+    }
+
+    return sanitized;
+  }
+
+  private async deleteCourseImage(publicId: string): Promise<void> {
+    try {
+      await this.cloudinaryService.deleteRawFile(publicId);
+    } catch {
+      this.logger.warn(`Failed to delete Cloudinary course image '${publicId}'`);
+    }
   }
 }

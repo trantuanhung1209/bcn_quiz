@@ -77,6 +77,12 @@ export class CourseController {
   }
 
   @Roles('admin')
+  @Post('upload/image-signature')
+  async createImageUploadSignature(@Body() dto: CreateUploadSignatureDto) {
+    return this.courseService.createImageUploadSignature(dto);
+  }
+
+  @Roles('admin')
   @Post()
   async createCourse(@Body() data: CreateCourseDto) {
     return this.courseService.createCourse(data);

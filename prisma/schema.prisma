@@ -124,6 +124,8 @@ model Course {
   name           String
   slug           String               @unique
   description    String?
+  imageUrl       String?
+  imagePublicId  String?
   hasProject     Boolean              @default(false)
   topicWeight    Int                  @default(50)
   projectWeight  Int                  @default(50)
