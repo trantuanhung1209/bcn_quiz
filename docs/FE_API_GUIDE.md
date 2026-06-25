@@ -2,7 +2,7 @@
 
 Tai lieu nay tong hop toan bo API hien co de frontend tich hop nhanh.
 
-> **Last updated:** June 2026 — Them topic image upload (Cloudinary signed upload).
+> **Last updated:** June 2026 — An `answer` va `explanation` khoi cac API lay danh sach quiz (bao mat). Chi tra ve sau khi user submit bai. Xem Section 4 va Section 5 de biet chi tiet.
 
 ---
 
@@ -126,6 +126,10 @@ Response `data.items[]`:
 
 1. `GET /topic/:id/quizzes?page=1&limit=10`
 2. `GET /topic/slug/:slug/quizzes?page=1&limit=10`
+
+Response `data.items[]` chi chua cau hoi va cac lua chon — **khong co `answer` va `explanation`**. Xem Section 4.1 de thay format day du.
+
+> Day la API chinh FE dung de hien thi man hinh lam bai. Viec an `answer` la co chu y — user khong the biet dap an bang cach inspect network response.
 
 ### 3.5 Create topic — [Admin]
 
@@ -278,19 +282,48 @@ async function createTopicWithImage(file: File, topicData: { name: string; slug:
 
 > **[Admin]** = chi admin moi goi duoc.
 
+> **Bao mat — answer an khoi response:** Tat ca API lay danh sach / chi tiet quiz (`GET /quiz`, `GET /quiz/:id`, `GET /quiz/code/:code`, `GET /topic/:id/quizzes`) **khong tra ve** field `answer` va `explanation`. Hai field nay chi xuat hien sau khi user **submit bai** (xem Section 5). Muc dich: tranh user doc dap an truoc khi lam bai.
+
 ### 4.1 Get quiz list
 
 `GET /quiz?page=1&limit=10`
+
+Response `data.items[]`:
+
+```json
+{
+  "id": "...",
+  "quizCode": "c_case_01",
+  "content": {
+    "text": "Ket qua xuat ra cua doan code sau la gi?",
+    "code": "#include <stdio.h>\\nvoid main() { ... }",
+    "has_code": true
+  },
+  "options": {
+    "is_code": false,
+    "data": {
+      "1": "10",
+      "2": "20",
+      "3": "30",
+      "4": "Loi cu phap"
+    }
+  }
+}
+```
+
+> `answer` va `explanation` **khong co** trong response nay.
 
 ### 4.2 Get quiz by id
 
 `GET /quiz/:id`
 
+Response tuong tu 4.1 — khong co `answer`, `explanation`.
+
 ### 4.3 Get quiz by code
 
 `GET /quiz/code/:code`
 
-Luu y: `quizCode` chi unique trong 1 topic, endpoint nay tra quiz moi nhat theo `quizCode`.
+Response tuong tu 4.1. Luu y: `quizCode` chi unique trong 1 topic, endpoint nay tra quiz moi nhat theo `quizCode`.
 
 ### 4.4 Create quiz — [Admin]
 
@@ -344,6 +377,12 @@ Body giong create:
 
 ## 5) Attempt + Session APIs
 
+> **Khi nao FE nhan duoc `answer` va `explanation`?**
+> - **Session submit** (`POST /attempt/session/:sessionId/submit`): response tra ve tong ket **va** `quizResults[]` chua `correctAnswer`, `isCorrect`, `explanation` tung cau ngay lap tuc — FE khong can goi them API de hien thi man hinh ket qua.
+> - **Single quiz submit** (`POST /quiz/:id/attempt`): response tra ve `correctAnswer` va `explanation` ngay lap tuc sau khi nop 1 cau.
+> - **Attempt detail** (`GET /attempt/me/:attemptId`): tra ve `quiz.answer` va `quiz.explanation` cho attempt cu.
+> - **Progress topic** (`GET /progress/me/topic/:topicId`): `quizStats[].correctAnswer` — dung cho man hinh on tap / xem lai lich su.
+
 ### 5.1 Session flow (khuyen nghi cho thi theo topic)
 
 #### Start session
@@ -358,13 +397,32 @@ Body (optional):
 }
 ```
 
-Range hop le: `5` → `240`.
+Range hop le: `5` → `240`. Mac dinh `30`.
+
+Response `data`:
+
+```json
+{
+  "id": "<sessionId>",
+  "topicId": "...",
+  "currentQuizId": null,
+  "status": "IN_PROGRESS",
+  "answers": {},
+  "startedAt": "2026-06-25T10:00:00.000Z",
+  "lastSeenAt": "2026-06-25T10:00:00.000Z",
+  "expiresAt": "2026-06-25T10:30:00.000Z",
+  "submittedAt": null
+}
+```
+
+Luu y: neu user da co session `IN_PROGRESS` chua het han, se tra lai session do (khong tao moi).
 
 #### Resume session
 
 `GET /topic/:topicId/session/resume`
 
-Tra `null` neu khong co session dang lam hoac session da het han.
+Tra `data: null` neu khong co session dang lam hoac session da het han.
+Tra lai session object (gong start) neu con hop le — kem `answers` da luu truoc do.
 
 #### Save progress (autosave)
 
@@ -385,14 +443,17 @@ Body tuong thich nguoc (batch map):
 {
   "currentQuizId": "<quiz_id>",
   "answers": {
-    "<quiz_id>": "2"
+    "<quiz_id_1>": "2",
+    "<quiz_id_2>": "3"
   }
 }
 ```
 
 Luu y:
 - Neu gui `selectedAnswer` thi phai co `currentQuizId`.
+- `answers` (batch) se merge vao cac cau da luu truoc, khong ghi de toan bo.
 - Moi lan save se gia han session them 30 phut.
+- Response tra lai session object voi `answers` da cap nhat.
 
 #### Submit session
 
@@ -409,9 +470,50 @@ Response `data`:
   "attemptedQuizCount": 5,
   "correctCount": 4,
   "score": 0.8,
-  "submittedAt": "2026-04-02T07:00:00.000Z"
+  "submittedAt": "2026-04-02T07:00:00.000Z",
+  "quizResults": [
+    {
+      "quizId": "...",
+      "quizCode": "c_case_01",
+      "content": {
+        "text": "Ket qua xuat ra cua doan code sau la gi?",
+        "code": "#include <stdio.h>\nvoid main() { ... }",
+        "has_code": true
+      },
+      "options": {
+        "is_code": false,
+        "data": {
+          "1": "10",
+          "2": "20",
+          "3": "30",
+          "4": "Loi cu phap"
+        }
+      },
+      "selectedAnswer": "1",
+      "correctAnswer": "2",
+      "isCorrect": false,
+      "explanation": "Day la toan tu tam nguyen..."
+    },
+    {
+      "quizId": "...",
+      "quizCode": "c_case_02",
+      "content": { "text": "...", "code": null, "has_code": false },
+      "options": { "is_code": false, "data": { "1": "A", "2": "B" } },
+      "selectedAnswer": null,
+      "correctAnswer": "1",
+      "isCorrect": null,
+      "explanation": "..."
+    }
+  ]
 }
 ```
+
+Luu y:
+- `quizResults` chua **tat ca cau hoi** trong topic, ke ca cau user **bo qua**.
+- Cau da chon: `selectedAnswer` = gia tri da chon, `isCorrect` = `true`/`false`.
+- Cau bo qua: `selectedAnswer: null`, `isCorrect: null`, nhung van co `correctAnswer` va `explanation` de hien thi.
+- `content`, `options` co cung format voi GET quiz list — FE co the tai su dung component hien thi cau hoi.
+- De hien thi man hinh ket qua sau submit, dung truc tiep `quizResults` tu response nay, **khong can goi them API**.
 
 ### 5.2 Single quiz submit (khong theo session)
 
@@ -426,6 +528,24 @@ Body:
 }
 ```
 
+Response `data`:
+
+```json
+{
+  "attemptId": "...",
+  "quiz": { "id": "...", "quizCode": "c_case_01" },
+  "selectedAnswer": "2",
+  "correctAnswer": "2",
+  "isCorrect": true,
+  "score": 1,
+  "explanation": "Day la toan tu tam nguyen...",
+  "submittedAt": "2026-04-02T13:30:05.000Z",
+  "durationMs": 5000
+}
+```
+
+> Single submit tra ve `correctAnswer` va `explanation` ngay lap tuc.
+
 ### 5.3 Attempt history
 
 **List my attempts:** `GET /attempt/me?page=1&limit=10`
@@ -433,6 +553,8 @@ Body:
 Optional filters: `topicId`, `quizId`.
 
 **Get attempt detail:** `GET /attempt/me/:attemptId`
+
+Response attempt detail bao gom `quiz.answer` va `quiz.explanation` (vi user da tung tra loi cau nay).
 
 ---
 
@@ -478,7 +600,7 @@ Rule hoan thanh course:
 | `GET` | `/course/:id/topics?page=1&limit=10` | |
 | `GET` | `/course/:id/progress/me` | |
 | `GET` | `/course/:id/project-submission/me` | |
-| `POST` | `/course/:id/upload/signature` | Lay signature upload Cloudinary |
+| `POST` | `/course/:id/upload/signature` | Lay signature upload Cloudinary (project file) |
 | `POST` | `/course/:id/project-submission` | Submit metadata file |
 | `PATCH` | `/course/:id/project-submission/:submissionId` | Cap nhat submission |
 | `DELETE` | `/course/:id/project-submission/:submissionId` | Xoa submission |
@@ -638,6 +760,7 @@ async function handleProjectUpload(courseId: string, file: File) {
 
 | Method | Endpoint | Ghi chu |
 |--------|----------|---------|
+| `POST` | `/course/upload/image-signature` | Lay signature upload anh cover course |
 | `POST` | `/course` | Tao course |
 | `PUT` | `/course/:id` | Cap nhat course |
 | `DELETE` | `/course/:id` | Xoa course |
@@ -649,7 +772,59 @@ async function handleProjectUpload(courseId: string, file: File) {
 Luu y `PUT /course/:id/project-requirement`:
 - `description` bat buoc, khong duoc de trong.
 
-Body `PATCH .../review`:
+**Course response fields** (`imageUrl`, `imagePublicId` co the la `null`):
+
+```json
+{
+  "id": "...",
+  "name": "JavaScript Fundamentals",
+  "slug": "javascript-fundamentals",
+  "description": "...",
+  "imageUrl": "https://res.cloudinary.com/...",
+  "imagePublicId": "course-images/javascript-fundamentals",
+  "hasProject": true,
+  "topicWeight": 50,
+  "projectWeight": 50,
+  "createdAt": "...",
+  "updatedAt": "..."
+}
+```
+
+**Body `POST /course`:**
+
+```json
+{
+  "name": "JavaScript Fundamentals",
+  "slug": "javascript-fundamentals",
+  "description": "Khoa hoc co ban ve JavaScript",
+  "imageUrl": "https://res.cloudinary.com/...",
+  "imagePublicId": "course-images/javascript-fundamentals",
+  "hasProject": true,
+  "topicWeight": 50,
+  "projectWeight": 50
+}
+```
+
+- `imageUrl` va `imagePublicId` la optional, nhung neu gui phai gui **ca hai** cung luc. Gui mot trong hai -> `400`.
+- `imageUrl` phai la HTTPS URL thuoc `res.cloudinary.com` va dung cloud name.
+- Lay `imageUrl` + `imagePublicId` bang cach upload anh truoc qua `POST /course/upload/image-signature` (xem muc 7.4).
+
+**Body `PUT /course/:id`** (tat ca optional):
+
+```json
+{
+  "name": "JavaScript Fundamentals v2",
+  "slug": "javascript-fundamentals-v2",
+  "description": "...",
+  "imageUrl": "https://res.cloudinary.com/...",
+  "imagePublicId": "course-images/javascript-fundamentals-v2",
+  "hasProject": false
+}
+```
+
+- Khi cap nhat `imagePublicId` moi khac cu, anh cu tren Cloudinary se tu dong bi **xoa**.
+
+**Body `PATCH .../review`:**
 
 ```json
 {
@@ -665,6 +840,96 @@ Body `PATCH .../review`:
 `GET /certificate/me`
 
 Chi tra ve chung chi sau khi course dat 100%.
+
+---
+
+### 7.4 Upload course image signature — [Admin]
+
+`POST /course/upload/image-signature`
+
+Lay signature de FE upload anh cover course truc tiep len Cloudinary (khong qua server).
+
+Body (optional):
+
+```json
+{
+  "publicId": "javascript-fundamentals"
+}
+```
+
+Response `data`:
+
+```json
+{
+  "signature": "abc123...",
+  "timestamp": 1718000000,
+  "folder": "course-images",
+  "apiKey": "your_api_key",
+  "cloudName": "your_cloud",
+  "resourceType": "auto",
+  "uploadUrl": "https://api.cloudinary.com/v1_1/your_cloud/auto/upload"
+}
+```
+
+**Flow upload anh cho course (3 buoc):**
+
+```
+1. POST /course/upload/image-signature  →  nhan signature
+2. FE upload anh truc tiep len Cloudinary (multipart/form-data)
+3. POST /course hoac PUT /course/:id  voi { imageUrl, imagePublicId }
+```
+
+**TypeScript snippet:**
+
+```ts
+async function getCourseImageSignature(publicId?: string): Promise<UploadSignatureResponse> {
+  const res = await fetch('/course/upload/image-signature', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+    body: JSON.stringify(publicId ? { publicId } : {}),
+  });
+  if (!res.ok) throw new Error('Cannot get signature');
+  const payload = await res.json();
+  return payload.data;
+}
+
+async function uploadCourseImage(file: File, sig: UploadSignatureResponse, publicId?: string) {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('api_key', sig.apiKey);
+  form.append('timestamp', String(sig.timestamp));
+  form.append('signature', sig.signature);
+  form.append('folder', sig.folder);
+  form.append('resource_type', sig.resourceType);
+  if (publicId) form.append('public_id', publicId);
+
+  const res = await fetch(sig.uploadUrl, { method: 'POST', body: form });
+  if (!res.ok) throw new Error('Cloudinary upload failed');
+  const result = await res.json();
+
+  return {
+    imageUrl: result.secure_url as string,
+    imagePublicId: result.public_id as string,
+  };
+}
+
+// Usage: tao course kem anh
+async function createCourseWithImage(
+  file: File,
+  courseData: { name: string; slug: string; description?: string; hasProject?: boolean },
+) {
+  const publicId = file.name.replace(/\.[^.]+$/, '');
+  const sig = await getCourseImageSignature(publicId);
+  const { imageUrl, imagePublicId } = await uploadCourseImage(file, sig, publicId);
+
+  const res = await fetch('/course', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+    body: JSON.stringify({ ...courseData, imageUrl, imagePublicId }),
+  });
+  return res.json();
+}
+```
 
 ---
 
@@ -708,12 +973,15 @@ Chi tra ve chung chi sau khi course dat 100%.
 ### Topic quiz session flow
 
 1. User chon topic → `POST /topic/:topicId/session/start`.
-2. Lay danh sach quiz → `GET /topic/:topicId/quizzes`.
+2. Lay danh sach quiz → `GET /topic/:topicId/quizzes` — **chi co cau hoi + cac lua chon, khong co answer**.
 3. Moi lan user chon dap an → `POST /attempt/session/:sessionId/save`.
-4. User quay lai app → `GET /topic/:topicId/session/resume`.
+4. User quay lai app → `GET /topic/:topicId/session/resume` (kem `answers` da chon truoc do).
 5. Nop bai → `POST /attempt/session/:sessionId/submit`.
-6. Hien thi ket qua topic → `GET /progress/me/topic/:topicId`.
+6. **Hien thi ket qua tung cau ngay tu response submit** — `quizResults[]` co san `correctAnswer`, `isCorrect`, `explanation` tung cau. Khong can goi them API.
 7. Hien thi dashboard tong → `GET /progress/me`.
+
+> **Tai sao khong can goi them `GET /progress/me/topic/:topicId` sau submit?**
+> Submit session gio tra ve `quizResults[]` day du. API progress van huu ich khi user muon **xem lai lich su** lan lam bai truoc do.
 
 ### Topic image upload flow (admin)
 
@@ -722,3 +990,12 @@ Chi tra ve chung chi sau khi course dat 100%.
 3. Upload anh truc tiep len Cloudinary.
 4. Lay `imageUrl` + `imagePublicId` tu Cloudinary response.
 5. Gui cung voi topic data khi tao (`POST /topic`) hoac cap nhat (`PUT /topic/:id`).
+
+### Course image upload flow (admin)
+
+1. Admin chon anh cover cho course.
+2. Lay signature: `POST /course/upload/image-signature` (voi Bearer admin token).
+3. Upload anh truc tiep len Cloudinary.
+4. Lay `imageUrl` + `imagePublicId` tu Cloudinary response.
+5. Gui cung voi course data khi tao (`POST /course`) hoac cap nhat (`PUT /course/:id`).
+6. Khi xoa course, anh tren Cloudinary se tu dong bi xoa theo.

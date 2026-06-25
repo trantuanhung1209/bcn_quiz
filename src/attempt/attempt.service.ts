@@ -189,6 +189,25 @@ export class AttemptService {
       },
     });
 
+    type AttemptPayload = {
+      userId: string;
+      quizId: string;
+      topicId: string;
+      selectedAnswer: string;
+      isCorrect: boolean;
+      score: number;
+      startedAt: Date;
+      submittedAt: Date;
+      durationMs: number;
+      // Extra fields for response — not persisted
+      quizCode: string;
+      question: string;
+      code: string | null;
+      options: Array<{ label: string; content: string; isCode: boolean }>;
+      correctAnswer: string;
+      explanation: string;
+    };
+
     const attemptPayloads = quizzes
       .map((quiz) => {
         const selectedAnswer = answers[quiz.id];
@@ -212,19 +231,20 @@ export class AttemptService {
           startedAt: session.startedAt,
           submittedAt: new Date(),
           durationMs: Math.max(0, new Date().getTime() - session.startedAt.getTime()),
+          // Extra fields for response
+          quizCode: quiz.quizCode,
+          question: quiz.question,
+          code: quiz.code ?? null,
+          options: quiz.options.map((o) => ({
+            label: o.label,
+            content: o.content,
+            isCode: o.isCode,
+          })),
+          correctAnswer: quiz.answer,
+          explanation: quiz.explanation ?? '',
         };
       })
-      .filter((item): item is {
-        userId: string;
-        quizId: string;
-        topicId: string;
-        selectedAnswer: string;
-        isCorrect: boolean;
-        score: number;
-        startedAt: Date;
-        submittedAt: Date;
-        durationMs: number;
-      } => item !== null);
+      .filter((item): item is AttemptPayload => item !== null);
 
     if (attemptPayloads.length === 0) {
       throw new BadRequestException('No valid answers found in session');
@@ -263,6 +283,11 @@ export class AttemptService {
 
     await this.safeReevaluateCourseProgressByTopic(userId, session.topicId, req);
 
+    // Build a lookup map from the persisted attempts for quick access
+    const attemptByQuizId = new Map(
+      attemptPayloads.map((p) => [p.quizId, p]),
+    );
+
     return {
       sessionId: session.id,
       topicId: session.topicId,
@@ -270,6 +295,26 @@ export class AttemptService {
       correctCount,
       score: attemptPayloads.length > 0 ? correctCount / attemptPayloads.length : 0,
       submittedAt,
+      quizResults: quizzes.map((quiz) => {
+        const attempt = attemptByQuizId.get(quiz.id);
+        return {
+          quizId: quiz.id,
+          quizCode: quiz.quizCode,
+          content: {
+            text: quiz.question,
+            code: quiz.code ?? null,
+            has_code: Boolean(quiz.code),
+          },
+          options: {
+            is_code: quiz.options.some((o) => o.isCode),
+            data: Object.fromEntries(quiz.options.map((o) => [o.label, o.content])),
+          },
+          selectedAnswer: attempt?.selectedAnswer ?? null,
+          correctAnswer: quiz.answer,
+          isCorrect: attempt ? attempt.isCorrect : null,
+          explanation: quiz.explanation ?? '',
+        };
+      }),
     };
   }
 

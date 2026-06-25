@@ -46,6 +46,23 @@ function mapQuiz(raw: RawQuiz) {
   };
 }
 
+/** Public variant — omits answer and explanation for quiz-taking endpoints */
+function mapQuizPublic(raw: RawQuiz) {
+  return {
+    id: raw.id,
+    quizCode: raw.quizCode,
+    content: {
+      text: raw.content.text,
+      code: raw.content.code,
+      has_code: raw.content.has_code,
+    },
+    options: {
+      is_code: raw.options.is_code,
+      data: raw.options.data,
+    },
+  };
+}
+
 function toRawQuiz(quiz: any): RawQuiz {
   return {
     id: quiz.id,
@@ -106,7 +123,7 @@ export class TopicService {
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     return {
-      items: items.map((quiz) => mapQuiz(toRawQuiz(quiz))),
+      items: items.map((quiz) => mapQuizPublic(toRawQuiz(quiz))),
       pagination: {
         page,
         limit,

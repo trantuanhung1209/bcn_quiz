@@ -42,6 +42,23 @@ function mapQuiz(raw: RawQuiz) {
   };
 }
 
+/** Public variant — omits answer and explanation for quiz-taking endpoints */
+function mapQuizPublic(raw: RawQuiz) {
+  return {
+    id: raw.id,
+    quizCode: raw.quizCode,
+    content: {
+      text: raw.content.text,
+      code: raw.content.code,
+      has_code: raw.content.has_code,
+    },
+    options: {
+      is_code: raw.options.is_code,
+      data: raw.options.data,
+    },
+  };
+}
+
 function toRawQuiz(quiz: any): RawQuiz {
   return {
     id: quiz.id,
@@ -159,7 +176,7 @@ export class QuizService {
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     return {
-      items: quizzes.map((quiz) => mapQuiz(toRawQuiz(quiz))),
+      items: quizzes.map((quiz) => mapQuizPublic(toRawQuiz(quiz))),
       pagination: {
         page,
         limit,
@@ -180,7 +197,7 @@ export class QuizService {
       },
     });
 
-    return quiz ? mapQuiz(toRawQuiz(quiz)) : null;
+    return quiz ? mapQuizPublic(toRawQuiz(quiz)) : null;
   }
 
   async getQuizByCode(quizCode: string) {
@@ -193,7 +210,7 @@ export class QuizService {
       },
     });
 
-    return quiz ? mapQuiz(toRawQuiz(quiz)) : null;
+    return quiz ? mapQuizPublic(toRawQuiz(quiz)) : null;
   }
 
   async createQuiz(data: CreateQuizDto) {
