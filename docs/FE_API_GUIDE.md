@@ -348,11 +348,16 @@ Body:
 }
 ```
 
+> **Quan trong — `answer` phai la label cua mot option:**
+> `answer: "2"` nghia la dap an dung la option co `label: "2"` (noi dung "20").
+> Neu `answer` khong khop voi bat ky label nao trong `options` → `400 Bad Request`.
+> Vi du sai: options co label `"1"`, `"2"`, `"3"`, `"4"` nhung `answer: "A"` → bi reject.
+
 ### 4.5 Update quiz — [Admin]
 
 `PUT /quiz/:id`
 
-Body giong create:
+Body giong create — luu y `answer` van phai la label hop le:
 
 ```json
 {
@@ -512,6 +517,7 @@ Luu y:
 - `quizResults` chua **tat ca cau hoi** trong topic, ke ca cau user **bo qua**.
 - Cau da chon: `selectedAnswer` = gia tri da chon, `isCorrect` = `true`/`false`.
 - Cau bo qua: `selectedAnswer: null`, `isCorrect: null`, nhung van co `correctAnswer` va `explanation` de hien thi.
+- `selectedAnswer` va `correctAnswer` deu la **label cua option** (vi du `"1"`, `"2"`, `"3"`, `"4"`). FE dung label nay de map vao `options.data[label]` de lay noi dung hien thi.
 - `content`, `options` co cung format voi GET quiz list — FE co the tai su dung component hien thi cau hoi.
 - De hien thi man hinh ket qua sau submit, dung truc tiep `quizResults` tu response nay, **khong can goi them API**.
 
@@ -944,7 +950,7 @@ async function createCourseWithImage(
 
 | Code | Nguyen nhan |
 |------|-------------|
-| `400` | Sai DTO, gui field du, `selectedAnswer` khong co `currentQuizId`, `imageUrl` co nhung thieu `imagePublicId` (hoac nguoc lai), project submission het file sau update, submission vuot qua 5 file |
+| `400` | Sai DTO, gui field du, `selectedAnswer` khong co `currentQuizId`, `imageUrl` co nhung thieu `imagePublicId` (hoac nguoc lai), project submission het file sau update, submission vuot qua 5 file, `answer` khong khop voi bat ky label nao trong `options` |
 | `401/403` | Thieu token, token het han, user truy cap resource khong phai cua minh |
 | `404` | Topic / Quiz / Session / Attempt / Course khong ton tai |
 | `409` | `quizCode` trung trong cung topic, `slug` trung trong cung course, user submit project lan 2 |
