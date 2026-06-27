@@ -247,21 +247,26 @@ export class AttemptService {
       })
       .filter((item): item is AttemptPayload => item !== null);
 
-    if (attemptPayloads.length === 0) {
-      throw new BadRequestException('No valid answers found in session');
-    }
-
+    // Allow submit with zero answers — score will be 0
     const submittedAt = new Date();
     const correctCount = attemptPayloads.filter((item) => item.isCorrect).length;
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.quizAttempt.createMany({
-        data: attemptPayloads.map((payload) => ({
-          ...payload,
-          submittedAt,
-          durationMs: Math.max(0, submittedAt.getTime() - session.startedAt.getTime()),
-        })),
-      });
+      if (attemptPayloads.length > 0) {
+        await tx.quizAttempt.createMany({
+          data: attemptPayloads.map((payload) => ({
+            userId: payload.userId,
+            quizId: payload.quizId,
+            topicId: payload.topicId,
+            selectedAnswer: payload.selectedAnswer,
+            isCorrect: payload.isCorrect,
+            score: payload.score,
+            startedAt: payload.startedAt,
+            submittedAt,
+            durationMs: Math.max(0, submittedAt.getTime() - session.startedAt.getTime()),
+          })),
+        });
+      }
 
       await this.updateTopicProgress(
         tx,
