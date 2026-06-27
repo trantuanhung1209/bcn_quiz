@@ -170,14 +170,15 @@ export class AttemptService {
       throw new ForbiddenException('You do not have access to this session');
     }
 
-    if (session.status !== AttemptSessionStatus.IN_PROGRESS) {
+    if (
+      session.status !== AttemptSessionStatus.IN_PROGRESS &&
+      session.status !== AttemptSessionStatus.EXPIRED
+    ) {
       throw new BadRequestException('Session is not in progress');
     }
 
-    const expired = await this.expireSessionIfNeeded(session.id, session.expiresAt);
-    if (expired) {
-      throw new BadRequestException('Session has expired. Please start a new session.');
-    }
+    // Allow submit even if session has expired — answers saved before expiry are still valid
+    await this.expireSessionIfNeeded(session.id, session.expiresAt);
 
     const answers = this.parseAnswers(session.answers);
     const quizzes = await this.prisma.quiz.findMany({
