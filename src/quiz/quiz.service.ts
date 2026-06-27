@@ -119,6 +119,8 @@ export class QuizService {
     quizCode: string | undefined,
     topicId: string | undefined,
     currentQuizId?: string,
+    answer?: string,
+    optionLabels?: string[],
   ): Promise<void> {
     if (!quizCode?.trim()) {
       throw new BadRequestException('quizCode is required');
@@ -126,6 +128,14 @@ export class QuizService {
 
     if (!topicId?.trim()) {
       throw new BadRequestException('topicId is required');
+    }
+
+    if (answer && optionLabels && optionLabels.length > 0) {
+      if (!optionLabels.includes(answer)) {
+        throw new BadRequestException(
+          `answer '${answer}' must match one of the option labels: ${optionLabels.join(', ')}`,
+        );
+      }
     }
 
     const existingQuiz = await this.prisma.quiz.findFirst({
@@ -215,7 +225,8 @@ export class QuizService {
 
   async createQuiz(data: CreateQuizDto) {
     const input = normalizeQuizInput(data);
-    await this.validateQuizInput(input.quizCode, input.topicId);
+    const optionLabels = input.options.map((o: any) => o.label);
+    await this.validateQuizInput(input.quizCode, input.topicId, undefined, input.answer, optionLabels);
 
     const quiz = await this.prisma.quiz.create({
       data: {
@@ -248,19 +259,8 @@ export class QuizService {
 
   async updateQuiz(id: string, data: any) {
     const input = normalizeQuizInput(data);
-
-    if (!input.topicId?.trim()) {
-      throw new BadRequestException('topicId is required');
-    }
-
-    const existingTopic = await this.prisma.topic.findUnique({
-      where: { id: input.topicId },
-      select: { id: true },
-    });
-
-    if (!existingTopic) {
-      throw new NotFoundException(`Topic with id '${input.topicId}' was not found`);
-    }
+    const optionLabels = input.options.map((o: any) => o.label);
+    await this.validateQuizInput(input.quizCode, input.topicId, id, input.answer, optionLabels);
 
     const quiz = await this.prisma.quiz.update({
       where: { id },

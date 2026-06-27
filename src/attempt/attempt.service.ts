@@ -180,6 +180,9 @@ export class AttemptService {
       where: {
         topicId: session.topicId,
       },
+      orderBy: {
+        createdAt: 'asc',
+      },
       include: {
         options: true,
       },

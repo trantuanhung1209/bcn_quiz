@@ -107,7 +107,7 @@ export class TopicService {
         skip,
         take: limit,
         orderBy: {
-          createdAt: 'desc',
+          createdAt: 'asc',
         },
         include: {
           options: true,
