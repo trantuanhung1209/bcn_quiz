@@ -74,7 +74,7 @@ export class AttemptService {
       where: {
         userId,
         topicId,
-        status: AttemptSessionStatus.IN_PROGRESS,
+        status: { in: [AttemptSessionStatus.IN_PROGRESS, AttemptSessionStatus.EXPIRED] },
       },
       orderBy: {
         updatedAt: 'desc',
@@ -82,11 +82,6 @@ export class AttemptService {
     });
 
     if (!session) {
-      return null;
-    }
-
-    const expired = await this.expireSessionIfNeeded(session.id, session.expiresAt);
-    if (expired) {
       return null;
     }
 
@@ -112,13 +107,11 @@ export class AttemptService {
       throw new ForbiddenException('You do not have access to this session');
     }
 
-    if (session.status !== AttemptSessionStatus.IN_PROGRESS) {
+    if (
+      session.status !== AttemptSessionStatus.IN_PROGRESS &&
+      session.status !== AttemptSessionStatus.EXPIRED
+    ) {
       throw new BadRequestException('Session is not in progress');
-    }
-
-    const expired = await this.expireSessionIfNeeded(session.id, session.expiresAt);
-    if (expired) {
-      throw new BadRequestException('Session has expired. Please start a new session.');
     }
 
     if (dto.currentQuizId) {
@@ -148,6 +141,8 @@ export class AttemptService {
         currentQuizId: dto.currentQuizId ?? session.currentQuizId,
         answers: mergedAnswers,
         lastSeenAt: now,
+        // Re-extend expiry and restore to IN_PROGRESS if it had expired
+        status: AttemptSessionStatus.IN_PROGRESS,
         expiresAt: new Date(now.getTime() + 30 * 60_000),
       },
     });
