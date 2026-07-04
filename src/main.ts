@@ -26,7 +26,8 @@ async function bootstrap() {
     /^https?:\/\/(.*\.)?uside\.studio$/, // uside.studio and its subdomains
     ...envOrigins,
     'https://quizzes-uside-studio.vercel.app', // Vercel deployment
-    'https://profiles-uside-studio.vercel.app'
+    'https://profiles-uside-studio.vercel.app',
+    'https://quizzes.uside.id.vn'
   ];
 
   app.enableCors({
