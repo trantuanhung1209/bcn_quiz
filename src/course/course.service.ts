@@ -98,8 +98,9 @@ export class CourseService {
       where: { id },
       include: {
         topics: {
+          // sortOrder cao hơn = mới hơn, hiển thị trước (giống course list)
           orderBy: {
-            sortOrder: 'asc',
+            sortOrder: 'desc',
           },
           include: {
             topic: true,
@@ -121,8 +122,9 @@ export class CourseService {
       where: { slug },
       include: {
         topics: {
+          // sortOrder cao hơn = mới hơn, hiển thị trước (giống course list)
           orderBy: {
-            sortOrder: 'asc',
+            sortOrder: 'desc',
           },
           include: {
             topic: true,
@@ -151,8 +153,9 @@ export class CourseService {
         where: { courseId },
         skip,
         take: limit,
+        // sortOrder cao hơn = mới hơn, hiển thị trước (giống course list)
         orderBy: {
-          sortOrder: 'asc',
+          sortOrder: 'desc',
         },
         include: {
           topic: {
@@ -301,11 +304,13 @@ export class CourseService {
         where: { courseId },
       });
 
+      // Danh sách hiển thị theo sortOrder giảm dần, nên phần tử đầu mảng
+      // nhận sortOrder cao nhất để giữ đúng thứ tự client gửi lên
       await tx.courseTopic.createMany({
         data: uniqueTopicIds.map((topicId, index) => ({
           courseId,
           topicId,
-          sortOrder: index + 1,
+          sortOrder: uniqueTopicIds.length - index,
         })),
       });
     });
