@@ -11,6 +11,7 @@ import {
 import { QuizService } from './quiz.service';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { CreateQuizDto } from './dto/create-quiz.dto';
+import { CreateUploadSignatureDto } from './dto/create-upload-signature.dto';
 import { Roles } from 'src/auth/decorators/roles.decorator';
 
 @Controller('quiz')
@@ -30,6 +31,12 @@ export class QuizController {
   @Get('code/:code')
   async getQuizByCode(@Param('code') code: string) {
     return this.quizService.getQuizByCode(code);
+  }
+
+  @Roles('admin')
+  @Post('upload/signature')
+  async createImageUploadSignature(@Body() dto: CreateUploadSignatureDto) {
+    return this.quizService.createImageUploadSignature(dto);
   }
 
   @Roles('admin')

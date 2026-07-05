@@ -19,6 +19,8 @@ type RawQuiz = {
     text: string;
     code: string;
     has_code: boolean;
+    image: string | null;
+    has_image: boolean;
   };
   options: {
     is_code: boolean;
@@ -26,6 +28,7 @@ type RawQuiz = {
   };
   answer: string;
   explanation: string;
+  imagePublicId: string | null;
 };
 
 function mapQuiz(raw: RawQuiz) {
@@ -36,6 +39,8 @@ function mapQuiz(raw: RawQuiz) {
       text: raw.content.text,
       code: raw.content.code,
       has_code: raw.content.has_code,
+      image: raw.content.image,
+      has_image: raw.content.has_image,
     },
     options: {
       is_code: raw.options.is_code,
@@ -43,6 +48,7 @@ function mapQuiz(raw: RawQuiz) {
     },
     answer: raw.answer,
     explanation: raw.explanation,
+    imagePublicId: raw.imagePublicId,
   };
 }
 
@@ -55,6 +61,8 @@ function mapQuizPublic(raw: RawQuiz) {
       text: raw.content.text,
       code: raw.content.code,
       has_code: raw.content.has_code,
+      image: raw.content.image,
+      has_image: raw.content.has_image,
     },
     options: {
       is_code: raw.options.is_code,
@@ -71,6 +79,8 @@ function toRawQuiz(quiz: any): RawQuiz {
       text: quiz.question,
       code: quiz.code ?? '',
       has_code: Boolean(quiz.code),
+      image: quiz.imageUrl ?? null,
+      has_image: Boolean(quiz.imageUrl),
     },
     options: {
       is_code: (quiz.options ?? []).some((option: any) => option.isCode),
@@ -80,6 +90,7 @@ function toRawQuiz(quiz: any): RawQuiz {
     },
     answer: quiz.answer,
     explanation: quiz.explanation ?? '',
+    imagePublicId: quiz.imagePublicId ?? null,
   };
 }
 

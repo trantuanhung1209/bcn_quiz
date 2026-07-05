@@ -2,7 +2,7 @@
 
 Tai lieu nay tong hop toan bo API hien co de frontend tich hop nhanh.
 
-> **Last updated:** June 2026 — An `answer` va `explanation` khoi cac API lay danh sach quiz (bao mat). Chi tra ve sau khi user submit bai. Xem Section 4 va Section 5 de biet chi tiet.
+> **Last updated:** July 2026 — (1) An `answer` va `explanation` khoi cac API lay danh sach quiz (bao mat), chi tra ve sau khi user submit bai — xem Section 4 va 5. (2) Them API admin lay quiz kem dap an — Section 3.4b. (3) **Quiz ho tro cau hoi hinh anh**: `content.image` + `content.has_image` trong moi response quiz, upload qua `POST /quiz/upload/signature` — xem Section 4.4 va 4.7.
 
 ---
 
@@ -127,7 +127,7 @@ Response `data.items[]`:
 1. `GET /topic/:id/quizzes?page=1&limit=10`
 2. `GET /topic/slug/:slug/quizzes?page=1&limit=10`
 
-Response `data.items[]` chi chua cau hoi va cac lua chon — **khong co `answer` va `explanation`**. Xem Section 4.1 de thay format day du.
+Response `data.items[]` chi chua cau hoi va cac lua chon — **khong co `answer` va `explanation`**. Cau hoi hinh anh co `content.image` (URL) va `content.has_image` — xem Section 4.1. 
 
 > Day la API chinh FE dung de hien thi man hinh lam bai. Viec an `answer` la co chu y — user khong the biet dap an bang cach inspect network response.
 
@@ -135,7 +135,7 @@ Response `data.items[]` chi chua cau hoi va cac lua chon — **khong co `answer`
 
 `GET /topic/:id/quizzes/full?page=1&limit=10`
 
-Danh cho man hinh admin cap nhat quiz trong topic. Format giong 3.4 nhung moi item co them `answer` va `explanation`:
+Danh cho man hinh admin cap nhat quiz trong topic. Format giong 3.4 nhung moi item co them `answer`, `explanation` va `imagePublicId` (de quan ly anh khi update):
 
 ```json
 {
@@ -143,10 +143,17 @@ Danh cho man hinh admin cap nhat quiz trong topic. Format giong 3.4 nhung moi it
     {
       "id": "<quiz_id>",
       "quizCode": "c_case_01",
-      "content": { "text": "...", "code": "...", "has_code": true },
+      "content": {
+        "text": "...",
+        "code": "...",
+        "has_code": true,
+        "image": "https://res.cloudinary.com/<cloud>/image/upload/quiz-images/abc.png",
+        "has_image": true
+      },
       "options": { "is_code": false, "data": { "1": "10", "2": "20" } },
       "answer": "2",
-      "explanation": "..."
+      "explanation": "...",
+      "imagePublicId": "quiz-images/abc"
     }
   ],
   "pagination": { "page": 1, "limit": 10, "total": 25, "totalPages": 3, "hasNext": true, "hasPrevious": false }
@@ -154,6 +161,7 @@ Danh cho man hinh admin cap nhat quiz trong topic. Format giong 3.4 nhung moi it
 ```
 
 > Chi role `admin` goi duoc — user thuong bi `403`, chua dang nhap bi `401`.
+> `content.image` va `imagePublicId` la `null` neu quiz khong co anh.
 
 ### 3.5 Create topic — [Admin]
 
@@ -321,7 +329,9 @@ Response `data.items[]`:
   "content": {
     "text": "Ket qua xuat ra cua doan code sau la gi?",
     "code": "#include <stdio.h>\\nvoid main() { ... }",
-    "has_code": true
+    "has_code": true,
+    "image": "https://res.cloudinary.com/<cloud>/image/upload/quiz-images/abc.png",
+    "has_image": true
   },
   "options": {
     "is_code": false,
@@ -336,6 +346,7 @@ Response `data.items[]`:
 ```
 
 > `answer` va `explanation` **khong co** trong response nay.
+> `content.image` la URL anh cua cau hoi (`null` neu khong co) — FE render anh nay ngay duoi text cau hoi khi `has_image: true`.
 
 ### 4.2 Get quiz by id
 
@@ -363,6 +374,8 @@ Body:
   "answer": "2",
   "explanation": "Day la toan tu tam nguyen...",
   "topicId": "<topic_id>",
+  "imageUrl": "https://res.cloudinary.com/<cloud>/image/upload/quiz-images/abc.png",
+  "imagePublicId": "quiz-images/abc",
   "options": [
     { "label": "1", "content": "10", "isCode": false },
     { "label": "2", "content": "20", "isCode": false },
@@ -376,6 +389,12 @@ Body:
 > `answer: "2"` nghia la dap an dung la option co `label: "2"` (noi dung "20").
 > Neu `answer` khong khop voi bat ky label nao trong `options` → `400 Bad Request`.
 > Vi du sai: options co label `"1"`, `"2"`, `"3"`, `"4"` nhung `answer: "A"` → bi reject.
+
+**Cau hoi hinh anh (optional):**
+
+- `imageUrl` + `imagePublicId` la optional, nhung neu gui phai gui **ca hai** cung luc. Gui mot trong hai → `400`.
+- `imageUrl` phai la HTTPS URL thuoc `res.cloudinary.com` va dung cloud name → sai → `400`.
+- Lay `imageUrl` + `imagePublicId` bang cach upload anh truoc qua `POST /quiz/upload/signature` (xem muc 4.7).
 
 ### 4.5 Update quiz — [Admin]
 
@@ -391,6 +410,8 @@ Body giong create — luu y `answer` van phai la label hop le:
   "answer": "2",
   "explanation": "...",
   "topicId": "<topic_id>",
+  "imageUrl": "https://res.cloudinary.com/<cloud>/image/upload/quiz-images/abc.png",
+  "imagePublicId": "quiz-images/abc",
   "options": [
     { "label": "1", "content": "A", "isCode": false },
     { "label": "2", "content": "B", "isCode": false }
@@ -398,9 +419,43 @@ Body giong create — luu y `answer` van phai la label hop le:
 }
 ```
 
+**Luu y ve anh khi update (PUT semantics — thay the toan bo):**
+
+- Muon **giu anh cu**: gui lai `imageUrl` + `imagePublicId` hien tai (lay tu `GET /topic/:id/quizzes/full`).
+- Muon **doi anh**: upload anh moi → gui `imageUrl` + `imagePublicId` moi. Anh cu tren Cloudinary se tu dong bi xoa.
+- Muon **xoa anh**: khong gui 2 field nay (hoac gui `null`). Anh cu tren Cloudinary se tu dong bi xoa.
+
 ### 4.6 Delete quiz — [Admin]
 
 `DELETE /quiz/:id`
+
+- Xoa quiz se tu dong xoa anh cau hoi tren Cloudinary kem theo (neu co).
+
+### 4.7 Upload quiz image signature — [Admin]
+
+`POST /quiz/upload/signature`
+
+Lay signature de FE upload anh cau hoi truc tiep len Cloudinary (khong qua server) — giong het flow cua topic (Section 3.8), chi khac folder mac dinh la `quiz-images`.
+
+Body (optional):
+
+```json
+{
+  "publicId": "c-case-01"
+}
+```
+
+Response `data`: giong Section 3.8 (`signature`, `timestamp`, `folder`, `apiKey`, `cloudName`, `resourceType`, `uploadUrl`).
+
+**Flow upload anh cho quiz (3 buoc):**
+
+```
+1. POST /quiz/upload/signature  →  nhan signature
+2. FE upload anh truc tiep len Cloudinary (multipart/form-data)
+3. POST /quiz hoac PUT /quiz/:id  voi { imageUrl, imagePublicId }
+```
+
+TypeScript snippet o Section 3.8 tai su dung duoc — chi doi URL signature sang `/quiz/upload/signature`.
 
 ---
 
@@ -507,7 +562,9 @@ Response `data`:
       "content": {
         "text": "Ket qua xuat ra cua doan code sau la gi?",
         "code": "#include <stdio.h>\nvoid main() { ... }",
-        "has_code": true
+        "has_code": true,
+        "image": null,
+        "has_image": false
       },
       "options": {
         "is_code": false,
@@ -526,7 +583,7 @@ Response `data`:
     {
       "quizId": "...",
       "quizCode": "c_case_02",
-      "content": { "text": "...", "code": null, "has_code": false },
+      "content": { "text": "...", "code": null, "has_code": false, "image": "https://res.cloudinary.com/<cloud>/image/upload/quiz-images/xyz.png", "has_image": true },
       "options": { "is_code": false, "data": { "1": "A", "2": "B" } },
       "selectedAnswer": null,
       "correctAnswer": "1",
@@ -1029,3 +1086,13 @@ async function createCourseWithImage(
 4. Lay `imageUrl` + `imagePublicId` tu Cloudinary response.
 5. Gui cung voi course data khi tao (`POST /course`) hoac cap nhat (`PUT /course/:id`).
 6. Khi xoa course, anh tren Cloudinary se tu dong bi xoa theo.
+
+### Quiz image upload flow (admin)
+
+1. Admin chon anh cho cau hoi (cau hoi dang hinh anh).
+2. Lay signature: `POST /quiz/upload/signature` (voi Bearer admin token).
+3. Upload anh truc tiep len Cloudinary.
+4. Lay `imageUrl` + `imagePublicId` tu Cloudinary response.
+5. Gui cung voi quiz data khi tao (`POST /quiz`) hoac cap nhat (`PUT /quiz/:id`).
+6. FE hien thi: moi response quiz co `content.image` (URL) + `content.has_image` — render anh duoi text cau hoi.
+7. Doi anh / xoa quiz → anh cu tren Cloudinary tu dong bi xoa.

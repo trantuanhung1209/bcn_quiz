@@ -47,6 +47,14 @@ export class CreateQuizDto {
   @IsNotEmpty()
   topicId!: string;
 
+  @IsString()
+  @IsOptional()
+  imageUrl?: string;
+
+  @IsString()
+  @IsOptional()
+  imagePublicId?: string;
+
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
