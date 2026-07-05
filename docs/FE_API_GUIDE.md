@@ -131,6 +131,30 @@ Response `data.items[]` chi chua cau hoi va cac lua chon — **khong co `answer`
 
 > Day la API chinh FE dung de hien thi man hinh lam bai. Viec an `answer` la co chu y — user khong the biet dap an bang cach inspect network response.
 
+### 3.4b Get quizzes in topic (full, kem dap an) — [Admin]
+
+`GET /topic/:id/quizzes/full?page=1&limit=10`
+
+Danh cho man hinh admin cap nhat quiz trong topic. Format giong 3.4 nhung moi item co them `answer` va `explanation`:
+
+```json
+{
+  "items": [
+    {
+      "id": "<quiz_id>",
+      "quizCode": "c_case_01",
+      "content": { "text": "...", "code": "...", "has_code": true },
+      "options": { "is_code": false, "data": { "1": "10", "2": "20" } },
+      "answer": "2",
+      "explanation": "..."
+    }
+  ],
+  "pagination": { "page": 1, "limit": 10, "total": 25, "totalPages": 3, "hasNext": true, "hasPrevious": false }
+}
+```
+
+> Chi role `admin` goi duoc — user thuong bi `403`, chua dang nhap bi `401`.
+
 ### 3.5 Create topic — [Admin]
 
 `POST /topic`
