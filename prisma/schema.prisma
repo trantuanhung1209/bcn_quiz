@@ -36,6 +36,9 @@ model Quiz {
   explanation String?
   answer      String
 
+  imageUrl      String?
+  imagePublicId String?
+
   topicId     String
   topic       Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
 

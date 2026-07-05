@@ -139,4 +139,12 @@ export class CloudinaryService {
       // Best effort cleanup only.
     }
   }
+
+  async deleteImage(publicId: string): Promise<void> {
+    try {
+      await cloudinary.uploader.destroy(publicId, { resource_type: 'image' });
+    } catch {
+      // Best effort cleanup only.
+    }
+  }
 }

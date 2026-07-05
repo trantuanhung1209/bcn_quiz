@@ -308,6 +308,8 @@ export class AttemptService {
             text: quiz.question,
             code: quiz.code ?? null,
             has_code: Boolean(quiz.code),
+            image: quiz.imageUrl ?? null,
+            has_image: Boolean(quiz.imageUrl),
           },
           options: {
             is_code: quiz.options.some((o) => o.isCode),
@@ -422,6 +424,7 @@ export class AttemptService {
               id: true,
               quizCode: true,
               question: true,
+              imageUrl: true,
             },
           },
           topic: {
@@ -462,6 +465,7 @@ export class AttemptService {
             id: true,
             quizCode: true,
             question: true,
+            imageUrl: true,
             answer: true,
             explanation: true,
             options: true,
@@ -556,6 +560,7 @@ export class AttemptService {
           id: true,
           quizCode: true,
           question: true,
+          imageUrl: true,
           answer: true,
         },
         orderBy: {
@@ -593,6 +598,7 @@ export class AttemptService {
               id: true,
               quizCode: true,
               question: true,
+              imageUrl: true,
             },
           },
         },
@@ -614,6 +620,7 @@ export class AttemptService {
         quizId: quiz.id,
         quizCode: quiz.quizCode,
         question: quiz.question,
+        image: quiz.imageUrl ?? null,
         answered: Boolean(attempt),
         selectedAnswer: attempt?.selectedAnswer ?? null,
         correctAnswer: quiz.answer,
