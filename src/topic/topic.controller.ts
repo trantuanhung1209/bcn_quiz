@@ -27,6 +27,16 @@ export class TopicController {
     return this.topicService.getQuizzesByTopicId(id, query);
   }
 
+  // Dành cho màn hình admin cập nhật quiz: trả kèm answer/explanation
+  @Roles('admin')
+  @Get(':id/quizzes/full')
+  async getQuizzesWithAnswersByTopicId(
+    @Param('id') id: string,
+    @Query() query: PaginationQueryDto,
+  ) {
+    return this.topicService.getQuizzesWithAnswersByTopicId(id, query);
+  }
+
   @Get('slug/:slug/quizzes')
   async getQuizzesByTopicSlug(
     @Param('slug') slug: string,

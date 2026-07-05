@@ -93,6 +93,40 @@ export class TopicService {
   ) {}
 
   async getQuizzesByTopicId(topicId: string, query: PaginationQueryDto) {
+    const { items, pagination } = await this.fetchQuizzesPageByTopicId(
+      topicId,
+      query,
+    );
+
+    return {
+      items: items.map((quiz) => mapQuizPublic(toRawQuiz(quiz))),
+      pagination,
+    };
+  }
+
+  /**
+   * Admin variant — includes answer/explanation in each item so the admin UI
+   * can display and edit the current correct answer of every quiz.
+   */
+  async getQuizzesWithAnswersByTopicId(
+    topicId: string,
+    query: PaginationQueryDto,
+  ) {
+    const { items, pagination } = await this.fetchQuizzesPageByTopicId(
+      topicId,
+      query,
+    );
+
+    return {
+      items: items.map((quiz) => mapQuiz(toRawQuiz(quiz))),
+      pagination,
+    };
+  }
+
+  private async fetchQuizzesPageByTopicId(
+    topicId: string,
+    query: PaginationQueryDto,
+  ) {
     await this.ensureTopicExists(topicId);
 
     const page = query.page ?? 1;
@@ -123,7 +157,7 @@ export class TopicService {
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     return {
-      items: items.map((quiz) => mapQuizPublic(toRawQuiz(quiz))),
+      items,
       pagination: {
         page,
         limit,
