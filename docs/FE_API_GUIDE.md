@@ -217,6 +217,8 @@ Luu y:
 
 Lay signature de FE upload anh truc tiep len Cloudinary (khong qua server).
 
+> He thong dung **signed upload** — form-data upload **khong duoc chua `upload_preset`**, neu khong Cloudinary bao `"Upload preset must be whitelisted for unsigned uploads"`. Chi tiet loi: Section 9.
+
 Body (optional):
 
 ```json
@@ -436,6 +438,8 @@ Body giong create — luu y `answer` van phai la label hop le:
 `POST /quiz/upload/signature`
 
 Lay signature de FE upload anh cau hoi truc tiep len Cloudinary (khong qua server) — giong het flow cua topic (Section 3.8), chi khac folder mac dinh la `quiz-images`.
+
+> Khong gui `upload_preset` trong form-data (signed upload) — xem loi thuong gap o Section 9.
 
 Body (optional):
 
@@ -936,6 +940,14 @@ Chi tra ve chung chi sau khi course dat 100%.
 
 Lay signature de FE upload anh cover course truc tiep len Cloudinary (khong qua server).
 
+> ⚠️ **Loi thuong gap: `"Upload preset must be whitelisted for unsigned uploads"`**
+>
+> Loi nay do **Cloudinary** tra ve (khong phai backend). Nguyen nhan: FE dang upload theo kieu **unsigned** — tuc la gui field `upload_preset` trong form-data (kieu code mau tren mang / upload widget hay dung).
+>
+> He thong nay dung **signed upload**: backend cap chu ky qua endpoint nay, FE upload bang bo `api_key + timestamp + signature + folder`. **Tuyet doi khong gui `upload_preset`** — bo han field nay khoi form-data la het loi.
+>
+> Lam y het flow 3 buoc + form-data checklist ben duoi (giong code upload anh topic dang chay OK).
+
 Body (optional):
 
 ```json
@@ -961,10 +973,31 @@ Response `data`:
 **Flow upload anh cho course (3 buoc):**
 
 ```
-1. POST /course/upload/image-signature  →  nhan signature
-2. FE upload anh truc tiep len Cloudinary (multipart/form-data)
-3. POST /course hoac PUT /course/:id  voi { imageUrl, imagePublicId }
+1. POST /course/upload/image-signature (Bearer admin token)
+   → nhan { signature, timestamp, folder, apiKey, uploadUrl }
+
+2. POST {uploadUrl} (multipart/form-data) — upload thang len Cloudinary:
+   ┌─────────────────────────────────────────────┐
+   │ file       = <File>                         │
+   │ api_key    = apiKey    (tu buoc 1)          │
+   │ timestamp  = timestamp (tu buoc 1)          │
+   │ signature  = signature (tu buoc 1)          │
+   │ folder     = folder    (tu buoc 1)          │
+   │ public_id  = <neu buoc 1 co gui publicId>   │
+   │ ❌ KHONG gui upload_preset                  │
+   └─────────────────────────────────────────────┘
+   → Cloudinary tra ve { secure_url, public_id }
+
+3. POST /course hoac PUT /course/:id voi:
+   { imageUrl: secure_url, imagePublicId: public_id }
 ```
+
+**2 loi hay gap khi lam sai flow:**
+
+| Loi Cloudinary tra ve | Nguyen nhan | Cach sua |
+|---|---|---|
+| `Upload preset must be whitelisted for unsigned uploads` | Form-data co `upload_preset` (upload kieu unsigned) | Bo `upload_preset`, dung bo `api_key/timestamp/signature/folder` tu buoc 1 |
+| `Invalid Signature` | Form-data khac voi params da ky: gui `public_id` khac luc xin signature, sua `folder`, hoac xin signature 1 lan roi dung lai cho file khac | Moi lan upload xin signature moi; gui `public_id`/`folder` y het buoc 1 |
 
 **TypeScript snippet:**
 
@@ -1036,6 +1069,13 @@ async function createCourseWithImage(
 | `404` | Topic / Quiz / Session / Attempt / Course khong ton tai |
 | `409` | `quizCode` trung trong cung topic, `slug` trung trong cung course, user submit project lan 2 |
 | `429` | Vuot rate limit (5 req/phut voi auth API, 100 req/phut chung) |
+
+**Loi tu Cloudinary (khi FE upload anh truc tiep):**
+
+| Message | Nguyen nhan | Cach sua |
+|---------|-------------|----------|
+| `Upload preset must be whitelisted for unsigned uploads` | Form-data co `upload_preset` → Cloudinary hieu la upload **unsigned**. He thong nay chi dung **signed upload** | Bo `upload_preset`; upload voi `api_key + timestamp + signature + folder` lay tu endpoint signature (xem 3.8 / 4.7 / 7.4) |
+| `Invalid Signature` | Params upload khong khop voi params da ky (doi `public_id`, doi `folder`, hoac dung lai signature cu) | Xin signature moi cho moi lan upload; gui `public_id`/`folder` y het luc xin signature |
 
 ---
 
