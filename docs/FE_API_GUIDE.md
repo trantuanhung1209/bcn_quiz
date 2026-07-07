@@ -2,7 +2,7 @@
 
 Tai lieu nay tong hop toan bo API hien co de frontend tich hop nhanh.
 
-> **Last updated:** July 2026 — (1) An `answer` va `explanation` khoi cac API lay danh sach quiz (bao mat), chi tra ve sau khi user submit bai — xem Section 4 va 5. (2) Them API admin lay quiz kem dap an — Section 3.4b. (3) **Quiz ho tro cau hoi hinh anh**: `content.image` + `content.has_image` trong moi response quiz, upload qua `POST /quiz/upload/signature` — xem Section 4.4 va 4.7.
+> **Last updated:** July 2026 — (1) An `answer` va `explanation` khoi cac API lay danh sach quiz (bao mat), chi tra ve sau khi user submit bai — xem Section 4 va 5. (2) Them API admin lay quiz kem dap an — Section 3.4b. (3) **Quiz ho tro cau hoi hinh anh**: `content.image` + `content.has_image` trong moi response quiz, upload qua `POST /quiz/upload/signature` — xem Section 4.4 va 4.7. (4) **Huong dan upload anh (signed upload)**: kien truc upload truc tiep len Cloudinary + loi `upload_preset` thuong gap — xem Section 3.8, 7.4 va Section 9.
 
 ---
 
@@ -218,6 +218,32 @@ Luu y:
 Lay signature de FE upload anh truc tiep len Cloudinary (khong qua server).
 
 > He thong dung **signed upload** — form-data upload **khong duoc chua `upload_preset`**, neu khong Cloudinary bao `"Upload preset must be whitelisted for unsigned uploads"`. Chi tiet loi: Section 9.
+
+**"Upload truc tiep len Cloudinary" nghia la gi?**
+
+Buoc upload la FE goi **REST API cua Cloudinary** (`uploadUrl` trong response ben duoi), KHONG phai API cua backend. File anh di thang tu browser len Cloudinary:
+
+```
+Browser (FE admin)
+   │
+   │  (1) POST /topic/upload/signature
+   ├──────────────────────────────► Backend (NestJS)
+   │      ◄─ signature + apiKey + folder     (chi cap chu ky, khong nhan file)
+   │
+   │  (2) POST {uploadUrl}  (multipart/form-data)
+   ├──────────────────────────────► API cua Cloudinary
+   │      ◄─ { secure_url, public_id }       (file anh nam o day)
+   │
+   │  (3) POST /topic hoac PUT /topic/:id  voi { imageUrl, imagePublicId }
+   └──────────────────────────────► Backend (chi luu URL + publicId vao DB)
+```
+
+Vi sao thiet ke vay:
+
+- **File khong cham vao server NestJS** → server khong ton bang thong/RAM xu ly multipart; Cloudinary lo luon storage + CDN.
+- **Signature la lop bao mat**: backend giu `API_SECRET`, ky bo params (`timestamp + folder + public_id`) roi dua FE. Cloudinary verify chu ky nay — chi ai xin duoc chu ky tu backend (role admin) moi upload duoc. Vi vay **khong can `upload_preset`**.
+- **Loi o buoc 2 la do Cloudinary tra ve** (vi du `"Upload preset must be whitelisted for unsigned uploads"`) — backend khong co log gi ve buoc nay. FE doc response body tu Cloudinary de debug.
+- Flow nay ap dung **y het cho ca 3 loai anh**: topic (3.8), quiz (4.7), course (7.4) — chi khac endpoint xin chu ky va folder luu anh.
 
 Body (optional):
 
