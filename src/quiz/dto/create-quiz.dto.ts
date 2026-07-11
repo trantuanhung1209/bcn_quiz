@@ -24,8 +24,8 @@ class QuizOptionDto {
 
 export class CreateQuizDto {
   @IsString()
-  @IsNotEmpty()
-  quizCode!: string;
+  @IsOptional()
+  quizCode?: string;
 
   @IsString()
   @IsNotEmpty()

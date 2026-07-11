@@ -96,7 +96,10 @@ function toRawQuiz(quiz: any): RawQuiz {
 function normalizeQuizInput(data: any) {
   if (data?.content && data?.options?.data) {
     return {
-      quizCode: data.quizCode ?? data.id,
+      quizCode:
+        typeof data.quizCode === 'string' && data.quizCode.trim()
+          ? data.quizCode.trim()
+          : undefined,
       question: data.content.text,
       code: data.content.has_code ? data.content.code : null,
       explanation: data.explanation ?? null,
@@ -113,7 +116,10 @@ function normalizeQuizInput(data: any) {
   }
 
   return {
-    quizCode: data.quizCode,
+    quizCode:
+      typeof data.quizCode === 'string' && data.quizCode.trim()
+        ? data.quizCode.trim()
+        : undefined,
     question: data.question,
     code: data.code ?? null,
     explanation: data.explanation ?? null,
@@ -248,13 +254,25 @@ export class QuizService {
 
   async createQuiz(data: CreateQuizDto) {
     const input = normalizeQuizInput(data);
+    if (!input.topicId?.trim()) {
+      throw new BadRequestException('topicId is required');
+    }
+
+    const quizCode =
+      input.quizCode ?? (await this.generateQuizCode(input.topicId));
     const optionLabels = input.options.map((o: any) => o.label);
-    await this.validateQuizInput(input.quizCode, input.topicId, undefined, input.answer, optionLabels);
+    await this.validateQuizInput(
+      quizCode,
+      input.topicId,
+      undefined,
+      input.answer,
+      optionLabels,
+    );
     this.validateImageFields(input.imageUrl, input.imagePublicId);
 
     const quiz = await this.prisma.quiz.create({
       data: {
-        quizCode: input.quizCode,
+        quizCode,
         question: input.question,
         code: input.code,
         explanation: input.explanation,
@@ -286,21 +304,32 @@ export class QuizService {
   async updateQuiz(id: string, data: any) {
     const input = normalizeQuizInput(data);
     const optionLabels = input.options.map((o: any) => o.label);
-    await this.validateQuizInput(input.quizCode, input.topicId, id, input.answer, optionLabels);
-    this.validateImageFields(input.imageUrl, input.imagePublicId);
 
     const existing = await this.prisma.quiz.findUnique({
       where: { id },
-      select: { imagePublicId: true },
+      select: { quizCode: true, imagePublicId: true },
     });
 
     if (!existing) {
       throw new NotFoundException(`Quiz with id '${id}' was not found`);
     }
 
+    // Không gửi quizCode → giữ nguyên code cũ (FE không cần nhập tay khi sửa)
+    const quizCode = input.quizCode ?? existing.quizCode;
+
+    await this.validateQuizInput(
+      quizCode,
+      input.topicId,
+      id,
+      input.answer,
+      optionLabels,
+    );
+    this.validateImageFields(input.imageUrl, input.imagePublicId);
+
     const quiz = await this.prisma.quiz.update({
       where: { id },
       data: {
+        quizCode,
         question: input.question,
         code: input.code,
         answer: input.answer,
@@ -373,6 +402,39 @@ export class QuizService {
       folder,
       publicId,
     });
+  }
+
+  /**
+   * Sinh quizCode tuần tự trong topic: q_001, q_002, ...
+   * Nhảy qua các mã đã tồn tại (kể cả mã admin đặt tay).
+   */
+  private async generateQuizCode(topicId: string): Promise<string> {
+    const existing = await this.prisma.topic.findUnique({
+      where: { id: topicId },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      throw new NotFoundException(`Topic with id '${topicId}' was not found`);
+    }
+
+    const codes = await this.prisma.quiz.findMany({
+      where: { topicId },
+      select: { quizCode: true },
+    });
+    const used = new Set(codes.map((item) => item.quizCode));
+
+    let next = codes.length + 1;
+    for (let attempt = 0; attempt < used.size + 5; attempt += 1) {
+      const candidate = `q_${String(next).padStart(3, '0')}`;
+      if (!used.has(candidate)) {
+        return candidate;
+      }
+      next += 1;
+    }
+
+    // Fallback cực hiếm: tránh vòng lặp vô hạn nếu dữ liệu lạ
+    return `q_${Date.now().toString(36)}`;
   }
 
   private validateImageFields(

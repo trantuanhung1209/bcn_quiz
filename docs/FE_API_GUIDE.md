@@ -2,7 +2,7 @@
 
 Tai lieu nay tong hop toan bo API hien co de frontend tich hop nhanh.
 
-> **Last updated:** July 2026 — (1) An `answer` va `explanation` khoi cac API lay danh sach quiz (bao mat), chi tra ve sau khi user submit bai — xem Section 4 va 5. (2) Them API admin lay quiz kem dap an — Section 3.4b. (3) **Quiz ho tro cau hoi hinh anh**: `content.image` + `content.has_image` trong moi response quiz, upload qua `POST /quiz/upload/signature` — xem Section 4.4 va 4.7.
+> **Last updated:** July 2026 — (1) An `answer` va `explanation` khoi cac API lay danh sach quiz (bao mat), chi tra ve sau khi user submit bai — xem Section 4 va 5. (2) Them API admin lay quiz kem dap an — Section 3.4b. (3) **Quiz ho tro cau hoi hinh anh**: `content.image` + `content.has_image` trong moi response quiz, upload qua `POST /quiz/upload/signature` — xem Section 4.4 va 4.7. (4) **`quizCode` optional**: khong gui khi create → backend tu sinh `q_001`, `q_002`, ...; khi update khong gui → giu ma cu — xem Section 4.4.
 
 ---
 
@@ -368,7 +368,6 @@ Body:
 
 ```json
 {
-  "quizCode": "c_case_01",
   "question": "Ket qua xuat ra cua doan code sau la gi?",
   "code": "#include <stdio.h>\\nvoid main() { ... }",
   "answer": "2",
@@ -385,6 +384,11 @@ Body:
 }
 ```
 
+> **`quizCode` la optional:**
+> - Khong gui → backend tu sinh theo thu tu trong topic: `q_001`, `q_002`, `q_003`, ...
+> - Van co the gui tay neu muon dat ma rieng (vd. `c_case_01`). Trung trong cung topic → `409`.
+> - Response create luon tra ve `quizCode` (ke ca khi tu sinh) de FE hien thi.
+
 > **Quan trong — `answer` phai la label cua mot option:**
 > `answer: "2"` nghia la dap an dung la option co `label: "2"` (noi dung "20").
 > Neu `answer` khong khop voi bat ky label nao trong `options` → `400 Bad Request`.
@@ -400,11 +404,10 @@ Body:
 
 `PUT /quiz/:id`
 
-Body giong create — luu y `answer` van phai la label hop le:
+Body giong create — `quizCode` optional; `answer` van phai la label hop le:
 
 ```json
 {
-  "quizCode": "c_case_01",
   "question": "Noi dung moi",
   "code": "",
   "answer": "2",
@@ -419,6 +422,8 @@ Body giong create — luu y `answer` van phai la label hop le:
 }
 ```
 
+- Khong gui `quizCode` → giu nguyen ma cu.
+- Gui `quizCode` moi → doi ma (van unique trong topic).
 **Luu y ve anh khi update (PUT semantics — thay the toan bo):**
 
 - Muon **giu anh cu**: gui lai `imageUrl` + `imagePublicId` hien tai (lay tu `GET /topic/:id/quizzes/full`).
