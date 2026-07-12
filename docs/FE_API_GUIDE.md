@@ -2,7 +2,7 @@
 
 Tai lieu nay tong hop toan bo API hien co de frontend tich hop nhanh.
 
-> **Last updated:** July 2026 — (1) An `answer` va `explanation` khoi cac API lay danh sach quiz (bao mat), chi tra ve sau khi user submit bai — xem Section 4 va 5. (2) Them API admin lay quiz kem dap an — Section 3.4b. (3) **Quiz ho tro cau hoi hinh anh**: `content.image` + `content.has_image` trong moi response quiz, upload qua `POST /quiz/upload/signature` — xem Section 4.4 va 4.7. (4) **`quizCode` optional**: khong gui khi create → backend tu sinh `q_001`, `q_002`, ...; khi update khong gui → giu ma cu — xem Section 4.4.
+> **Last updated:** July 2026 — (1) An `answer` va `explanation` khoi cac API lay danh sach quiz (bao mat), chi tra ve sau khi user submit bai — xem Section 4 va 5. (2) Them API admin lay quiz kem dap an — Section 3.4b. (3) **Quiz ho tro cau hoi hinh anh**: `content.image` + `content.has_image` trong moi response quiz, upload qua `POST /quiz/upload/signature` — xem Section 4.4 va 4.7. (4) **`quizCode` optional**: khong gui khi create → backend tu sinh `q_001`, `q_002`, ...; khi update khong gui → giu ma cu — xem Section 4.4. (5) **Tao nhieu quiz 1 lan**: `POST /quiz/bulk` — xem Section 4.4b.
 
 ---
 
@@ -399,6 +399,60 @@ Body:
 - `imageUrl` + `imagePublicId` la optional, nhung neu gui phai gui **ca hai** cung luc. Gui mot trong hai → `400`.
 - `imageUrl` phai la HTTPS URL thuoc `res.cloudinary.com` va dung cloud name → sai → `400`.
 - Lay `imageUrl` + `imagePublicId` bang cach upload anh truoc qua `POST /quiz/upload/signature` (xem muc 4.7).
+
+### 4.4b Create many quizzes — [Admin]
+
+`POST /quiz/bulk`
+
+Tao nhieu quiz trong **1 request**. Toi da **100** quiz / lan. Tat ca-or-nothing: 1 item sai → ca batch bi reject, khong tao quiz nao.
+
+Body:
+
+```json
+{
+  "quizzes": [
+    {
+      "question": "Cau 1?",
+      "answer": "1",
+      "topicId": "<topic_id>",
+      "options": [
+        { "label": "1", "content": "A", "isCode": false },
+        { "label": "2", "content": "B", "isCode": false }
+      ]
+    },
+    {
+      "question": "Cau 2?",
+      "answer": "2",
+      "topicId": "<topic_id>",
+      "explanation": "...",
+      "options": [
+        { "label": "1", "content": "A", "isCode": false },
+        { "label": "2", "content": "B", "isCode": false }
+      ]
+    }
+  ]
+}
+```
+
+Luu y:
+
+- Moi item trong `quizzes[]` dung format giong `POST /quiz` (Section 4.4).
+- `quizCode` van optional — khong gui thi backend tu sinh `q_001`, `q_002`, ... (khong trung trong topic, ke ca trong cung batch).
+- Co the mix nhieu `topicId` trong 1 batch.
+- Trung `quizCode` (trong DB hoac trong batch) → `409`.
+- Item thieu `topicId` / `answer` khong khop option / anh sai → `400` (kem index `quizzes[i]`).
+
+Response `data`:
+
+```json
+{
+  "items": [
+    { "id": "...", "quizCode": "q_001", "content": { "...": "..." }, "answer": "1", "explanation": "", "imagePublicId": null },
+    { "id": "...", "quizCode": "q_002", "content": { "...": "..." }, "answer": "2", "explanation": "...", "imagePublicId": null }
+  ],
+  "count": 2
+}
+```
 
 ### 4.5 Update quiz — [Admin]
 

@@ -11,6 +11,7 @@ import {
 import { QuizService } from './quiz.service';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { CreateQuizDto } from './dto/create-quiz.dto';
+import { BulkCreateQuizzesDto } from './dto/bulk-create-quizzes.dto';
 import { CreateUploadSignatureDto } from './dto/create-upload-signature.dto';
 import { Roles } from 'src/auth/decorators/roles.decorator';
 
@@ -37,6 +38,12 @@ export class QuizController {
   @Post('upload/signature')
   async createImageUploadSignature(@Body() dto: CreateUploadSignatureDto) {
     return this.quizService.createImageUploadSignature(dto);
+  }
+
+  @Roles('admin')
+  @Post('bulk')
+  async createQuizzes(@Body() data: BulkCreateQuizzesDto) {
+    return this.quizService.createQuizzes(data);
   }
 
   @Roles('admin')
