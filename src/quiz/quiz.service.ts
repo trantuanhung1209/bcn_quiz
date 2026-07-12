@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from '../common/storage/cloudinary.service';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { CreateQuizDto } from './dto/create-quiz.dto';
+import { BulkCreateQuizzesDto } from './dto/bulk-create-quizzes.dto';
 import { CreateUploadSignatureDto } from './dto/create-upload-signature.dto';
 
 type RawQuiz = {
@@ -301,6 +302,122 @@ export class QuizService {
     return mapQuiz(toRawQuiz(quiz));
   }
 
+  async createQuizzes(data: BulkCreateQuizzesDto) {
+    if (!data.quizzes?.length) {
+      throw new BadRequestException('quizzes must contain at least 1 item');
+    }
+
+    const prepared = data.quizzes.map((item, index) => ({
+      index,
+      input: normalizeQuizInput(item),
+    }));
+
+    for (const item of prepared) {
+      if (!item.input.topicId?.trim()) {
+        throw new BadRequestException(
+          `quizzes[${item.index}].topicId is required`,
+        );
+      }
+      this.validateImageFields(item.input.imageUrl, item.input.imagePublicId);
+    }
+
+    const topicIds = [...new Set(prepared.map((item) => item.input.topicId))];
+    const topics = await this.prisma.topic.findMany({
+      where: { id: { in: topicIds } },
+      select: { id: true },
+    });
+    const existingTopicIds = new Set(topics.map((topic) => topic.id));
+    for (const topicId of topicIds) {
+      if (!existingTopicIds.has(topicId)) {
+        throw new NotFoundException(`Topic with id '${topicId}' was not found`);
+      }
+    }
+
+    const usedCodesByTopic = new Map<string, Set<string>>();
+    for (const topicId of topicIds) {
+      const codes = await this.prisma.quiz.findMany({
+        where: { topicId },
+        select: { quizCode: true },
+      });
+      usedCodesByTopic.set(
+        topicId,
+        new Set(codes.map((item) => item.quizCode)),
+      );
+    }
+
+    const resolved = prepared.map((item) => {
+      const used = usedCodesByTopic.get(item.input.topicId)!;
+      let quizCode = item.input.quizCode;
+
+      if (quizCode) {
+        if (used.has(quizCode)) {
+          throw new ConflictException(
+            `quizCode '${quizCode}' already exists in this topic (quizzes[${item.index}])`,
+          );
+        }
+        used.add(quizCode);
+      } else {
+        quizCode = this.allocateNextQuizCode(used);
+      }
+
+      const optionLabels = item.input.options.map((o: any) => o.label);
+      if (item.input.answer && optionLabels.length > 0) {
+        if (!optionLabels.includes(item.input.answer)) {
+          throw new BadRequestException(
+            `quizzes[${item.index}]: answer '${item.input.answer}' must match one of the option labels: ${optionLabels.join(', ')}`,
+          );
+        }
+      }
+
+      return {
+        ...item.input,
+        quizCode,
+      };
+    });
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const items = [];
+
+      for (const input of resolved) {
+        const quiz = await tx.quiz.create({
+          data: {
+            quizCode: input.quizCode,
+            question: input.question,
+            code: input.code,
+            explanation: input.explanation,
+            answer: input.answer,
+            imageUrl: input.imageUrl,
+            imagePublicId: input.imagePublicId,
+            topic: {
+              connect: {
+                id: input.topicId,
+              },
+            },
+            options: {
+              create: input.options.map((option: any) => ({
+                label: option.label,
+                content: option.content,
+                isCode: option.isCode ?? false,
+              })),
+            },
+          },
+          include: {
+            topic: true,
+            options: true,
+          },
+        });
+        items.push(mapQuiz(toRawQuiz(quiz)));
+      }
+
+      return items;
+    });
+
+    return {
+      items: created,
+      count: created.length,
+    };
+  }
+
   async updateQuiz(id: string, data: any) {
     const input = normalizeQuizInput(data);
     const optionLabels = input.options.map((o: any) => o.label);
@@ -406,9 +523,12 @@ export class QuizService {
 
   /**
    * Sinh quizCode tuần tự trong topic: q_001, q_002, ...
-   * Nhảy qua các mã đã tồn tại (kể cả mã admin đặt tay).
+   * `reservedCodes` dùng khi tạo hàng loạt để tránh trùng trong cùng batch.
    */
-  private async generateQuizCode(topicId: string): Promise<string> {
+  private async generateQuizCode(
+    topicId: string,
+    reservedCodes: Set<string> = new Set(),
+  ): Promise<string> {
     const existing = await this.prisma.topic.findUnique({
       where: { id: topicId },
       select: { id: true },
@@ -422,19 +542,29 @@ export class QuizService {
       where: { topicId },
       select: { quizCode: true },
     });
-    const used = new Set(codes.map((item) => item.quizCode));
+    const used = new Set([
+      ...codes.map((item) => item.quizCode),
+      ...reservedCodes,
+    ]);
 
-    let next = codes.length + 1;
+    return this.allocateNextQuizCode(used);
+  }
+
+  private allocateNextQuizCode(used: Set<string>): string {
+    let next = used.size + 1;
     for (let attempt = 0; attempt < used.size + 5; attempt += 1) {
       const candidate = `q_${String(next).padStart(3, '0')}`;
       if (!used.has(candidate)) {
+        used.add(candidate);
         return candidate;
       }
       next += 1;
     }
 
     // Fallback cực hiếm: tránh vòng lặp vô hạn nếu dữ liệu lạ
-    return `q_${Date.now().toString(36)}`;
+    const fallback = `q_${Date.now().toString(36)}`;
+    used.add(fallback);
+    return fallback;
   }
 
   private validateImageFields(
