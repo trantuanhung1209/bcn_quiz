@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
@@ -95,7 +96,14 @@ function toRawQuiz(quiz: any): RawQuiz {
 }
 
 function normalizeQuizInput(data: any) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new BadRequestException('Each quiz item must be a non-null object');
+  }
+
   if (data?.content && data?.options?.data) {
+    const optionEntries = Object.entries(
+      data.options.data as Record<string, unknown>,
+    );
     return {
       quizCode:
         typeof data.quizCode === 'string' && data.quizCode.trim()
@@ -108,12 +116,19 @@ function normalizeQuizInput(data: any) {
       topicId: data.topicId,
       imageUrl: data.imageUrl ?? data.content.image ?? null,
       imagePublicId: data.imagePublicId ?? null,
-      options: Object.entries(data.options.data).map(([label, content]) => ({
+      options: optionEntries.map(([label, content]) => ({
         label,
         content,
-        isCode: data.options.is_code ?? false,
+        isCode: Boolean(data.options.is_code),
       })),
     };
+  }
+
+  const rawOptions = Array.isArray(data.options) ? data.options : null;
+  if (data.options != null && rawOptions === null) {
+    throw new BadRequestException(
+      'options must be an array of { label, content, isCode } or { is_code, data }',
+    );
   }
 
   return {
@@ -128,11 +143,18 @@ function normalizeQuizInput(data: any) {
     topicId: data.topicId,
     imageUrl: data.imageUrl ?? null,
     imagePublicId: data.imagePublicId ?? null,
-    options: (data.options ?? []).map((option: any) => ({
-      label: option.label,
-      content: option.content,
-      isCode: option.isCode ?? false,
-    })),
+    options: (rawOptions ?? []).map((option: any, optionIndex: number) => {
+      if (!option || typeof option !== 'object') {
+        throw new BadRequestException(
+          `options[${optionIndex}] must be a non-null object`,
+        );
+      }
+      return {
+        label: option.label,
+        content: option.content,
+        isCode: option.isCode ?? false,
+      };
+    }),
   };
 }
 
@@ -307,10 +329,29 @@ export class QuizService {
       throw new BadRequestException('quizzes must contain at least 1 item');
     }
 
-    const prepared = data.quizzes.map((item, index) => ({
-      index,
-      input: normalizeQuizInput(item),
-    }));
+    const prepared = data.quizzes.map((item, index) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        throw new BadRequestException(
+          `quizzes[${index}] must be a non-null object`,
+        );
+      }
+
+      try {
+        return {
+          index,
+          input: normalizeQuizInput(item),
+        };
+      } catch (error) {
+        if (error instanceof BadRequestException) {
+          const message =
+            typeof error.message === 'string'
+              ? error.message
+              : `Invalid quiz payload`;
+          throw new BadRequestException(`quizzes[${index}]: ${message}`);
+        }
+        throw error;
+      }
+    });
 
     for (const item of prepared) {
       if (!item.input.topicId?.trim()) {
@@ -318,7 +359,31 @@ export class QuizService {
           `quizzes[${item.index}].topicId is required`,
         );
       }
-      this.validateImageFields(item.input.imageUrl, item.input.imagePublicId);
+      if (!item.input.question || typeof item.input.question !== 'string') {
+        throw new BadRequestException(
+          `quizzes[${item.index}].question is required`,
+        );
+      }
+      if (!item.input.answer || typeof item.input.answer !== 'string') {
+        throw new BadRequestException(
+          `quizzes[${item.index}].answer is required`,
+        );
+      }
+      if (!item.input.options?.length) {
+        throw new BadRequestException(
+          `quizzes[${item.index}].options must contain at least 1 option`,
+        );
+      }
+      try {
+        this.validateImageFields(item.input.imageUrl, item.input.imagePublicId);
+      } catch (error) {
+        if (error instanceof BadRequestException) {
+          throw new BadRequestException(
+            `quizzes[${item.index}]: ${error.message}`,
+          );
+        }
+        throw error;
+      }
     }
 
     const topicIds = [...new Set(prepared.map((item) => item.input.topicId))];
@@ -370,16 +435,16 @@ export class QuizService {
       }
 
       return {
+        index: item.index,
         ...item.input,
         quizCode,
       };
     });
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      const items = [];
-
-      for (const input of resolved) {
-        const quiz = await tx.quiz.create({
+    // Sequential transaction (không dùng interactive tx) — ổn định hơn với connection pooler
+    const createdQuizzes = await this.prisma.$transaction(
+      resolved.map((input) =>
+        this.prisma.quiz.create({
           data: {
             quizCode: input.quizCode,
             question: input.question,
@@ -388,11 +453,7 @@ export class QuizService {
             answer: input.answer,
             imageUrl: input.imageUrl,
             imagePublicId: input.imagePublicId,
-            topic: {
-              connect: {
-                id: input.topicId,
-              },
-            },
+            topicId: input.topicId,
             options: {
               create: input.options.map((option: any) => ({
                 label: option.label,
@@ -405,16 +466,22 @@ export class QuizService {
             topic: true,
             options: true,
           },
-        });
-        items.push(mapQuiz(toRawQuiz(quiz)));
-      }
+        }),
+      ),
+    );
 
-      return items;
+    const items = createdQuizzes.map((quiz, index) => {
+      if (!quiz) {
+        throw new InternalServerErrorException(
+          `Failed to create quiz at quizzes[${resolved[index]?.index ?? index}]`,
+        );
+      }
+      return mapQuiz(toRawQuiz(quiz));
     });
 
     return {
-      items: created,
-      count: created.length,
+      items,
+      count: items.length,
     };
   }
 

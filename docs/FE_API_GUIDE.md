@@ -436,11 +436,14 @@ Body:
 
 Luu y:
 
-- Moi item trong `quizzes[]` dung format giong `POST /quiz` (Section 4.4).
+- Moi item trong `quizzes[]` chap nhan **2 format**:
+  1. Flat (khuyen nghi): `{ question, answer, topicId, options: [{ label, content, isCode }] }`
+  2. Content format (giong response GET quiz): `{ content: { text, code, has_code, image }, options: { is_code, data }, answer, topicId }`
+- Field `id` cua quiz/option neu FE gui len se **bi bo qua** (khong can xoa tay).
 - `quizCode` van optional — khong gui thi backend tu sinh `q_001`, `q_002`, ... (khong trung trong topic, ke ca trong cung batch).
 - Co the mix nhieu `topicId` trong 1 batch.
 - Trung `quizCode` (trong DB hoac trong batch) → `409`.
-- Item thieu `topicId` / `answer` khong khop option / anh sai → `400` (kem index `quizzes[i]`).
+- Item sai → `400` kem index `quizzes[i]` (all-or-nothing, khong tao quiz nao).
 
 Response `data`:
 
