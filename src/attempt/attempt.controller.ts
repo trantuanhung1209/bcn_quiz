@@ -11,6 +11,7 @@ import type { Request as ExpressRequest } from 'express';
 import { AttemptService } from './attempt.service';
 import { SubmitAttemptDto } from './dto/submit-attempt.dto';
 import { AttemptQueryDto } from './dto/attempt-query.dto';
+import { SessionHistoryQueryDto } from './dto/session-history-query.dto';
 import { StartSessionDto } from './dto/start-session.dto';
 import { SaveSessionDto } from './dto/save-session.dto';
 
@@ -59,6 +60,22 @@ export class AttemptController {
     @Request() req: ExpressRequest,
   ) {
     return this.attemptService.submitAttempt(id, dto, req);
+  }
+
+  @Get('attempt/sessions/me')
+  async getMySessions(
+    @Query() query: SessionHistoryQueryDto,
+    @Request() req: ExpressRequest,
+  ) {
+    return this.attemptService.getMySessions(query, req);
+  }
+
+  @Get('attempt/sessions/me/:sessionId')
+  async getMySessionById(
+    @Param('sessionId') sessionId: string,
+    @Request() req: ExpressRequest,
+  ) {
+    return this.attemptService.getMySessionById(sessionId, req);
   }
 
   @Get('attempt/me')

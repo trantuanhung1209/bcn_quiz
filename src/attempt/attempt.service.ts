@@ -10,6 +10,7 @@ import { AttemptSessionStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SubmitAttemptDto } from './dto/submit-attempt.dto';
 import { AttemptQueryDto } from './dto/attempt-query.dto';
+import { SessionHistoryQueryDto } from './dto/session-history-query.dto';
 import { StartSessionDto } from './dto/start-session.dto';
 import { SaveSessionDto } from './dto/save-session.dto';
 import { CourseProgressService } from '../course/course-progress.service';
@@ -256,6 +257,7 @@ export class AttemptService {
             userId: payload.userId,
             quizId: payload.quizId,
             topicId: payload.topicId,
+            sessionId: session.id,
             selectedAnswer: payload.selectedAnswer,
             isCorrect: payload.isCorrect,
             score: payload.score,
@@ -490,6 +492,220 @@ export class AttemptService {
     }
 
     return attempt;
+  }
+
+  async getMySessions(query: SessionHistoryQueryDto, req: ExpressRequest) {
+    const userId = this.extractUserId(req);
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+    const skip = (page - 1) * limit;
+
+    const where = {
+      userId,
+      status: AttemptSessionStatus.SUBMITTED,
+      ...(query.topicId ? { topicId: query.topicId } : {}),
+    };
+
+    const [sessions, total] = await Promise.all([
+      this.prisma.attemptSession.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: {
+          submittedAt: 'desc',
+        },
+        include: {
+          topic: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+            },
+          },
+          attempts: {
+            select: {
+              id: true,
+              quizId: true,
+              isCorrect: true,
+              selectedAnswer: true,
+              score: true,
+              durationMs: true,
+            },
+          },
+        },
+      }),
+      this.prisma.attemptSession.count({ where }),
+    ]);
+
+    const legacySessionIds = sessions
+      .filter((session) => session.attempts.length === 0)
+      .map((session) => session.id);
+
+    const legacySummaries = await this.buildLegacySessionSummaries(
+      sessions.filter((session) => legacySessionIds.includes(session.id)),
+    );
+
+    const items = sessions.map((session) => {
+      if (session.attempts.length > 0) {
+        const answeredCount = session.attempts.length;
+        const correctCount = session.attempts.filter((a) => a.isCorrect).length;
+        return {
+          id: session.id,
+          topicId: session.topicId,
+          topic: session.topic,
+          status: session.status,
+          startedAt: session.startedAt,
+          submittedAt: session.submittedAt,
+          durationMs:
+            session.submittedAt != null
+              ? Math.max(0, session.submittedAt.getTime() - session.startedAt.getTime())
+              : session.attempts[0]?.durationMs ?? null,
+          answeredCount,
+          correctCount,
+          score: answeredCount > 0 ? correctCount / answeredCount : 0,
+        };
+      }
+
+      const legacy = legacySummaries.get(session.id);
+      return {
+        id: session.id,
+        topicId: session.topicId,
+        topic: session.topic,
+        status: session.status,
+        startedAt: session.startedAt,
+        submittedAt: session.submittedAt,
+        durationMs:
+          session.submittedAt != null
+            ? Math.max(0, session.submittedAt.getTime() - session.startedAt.getTime())
+            : null,
+        answeredCount: legacy?.answeredCount ?? 0,
+        correctCount: legacy?.correctCount ?? 0,
+        score: legacy?.score ?? 0,
+      };
+    });
+
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
+    return {
+      items,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrevious: page > 1,
+      },
+    };
+  }
+
+  async getMySessionById(sessionId: string, req: ExpressRequest) {
+    const userId = this.extractUserId(req);
+
+    const session = await this.prisma.attemptSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        topic: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+        },
+        attempts: {
+          select: {
+            id: true,
+            quizId: true,
+            selectedAnswer: true,
+            isCorrect: true,
+            score: true,
+            durationMs: true,
+            submittedAt: true,
+          },
+        },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException(`Session with id '${sessionId}' was not found`);
+    }
+
+    if (session.userId !== userId) {
+      throw new ForbiddenException('You do not have access to this session');
+    }
+
+    if (session.status !== AttemptSessionStatus.SUBMITTED) {
+      throw new BadRequestException('Session has not been submitted yet');
+    }
+
+    const quizzes = await this.prisma.quiz.findMany({
+      where: { topicId: session.topicId },
+      orderBy: { createdAt: 'asc' },
+      include: { options: true },
+    });
+
+    const attemptByQuizId = new Map(session.attempts.map((a) => [a.quizId, a]));
+    const answers = this.parseAnswers(session.answers);
+
+    // Legacy sessions (submitted before sessionId linking): rebuild from answers JSON
+    const useLegacyAnswers = session.attempts.length === 0;
+
+    const quizResults = quizzes.map((quiz) => {
+      const linkedAttempt = attemptByQuizId.get(quiz.id);
+      const selectedAnswer = useLegacyAnswers
+        ? answers[quiz.id] ?? null
+        : linkedAttempt?.selectedAnswer ?? null;
+
+      let isCorrect: boolean | null = null;
+      if (linkedAttempt) {
+        isCorrect = linkedAttempt.isCorrect;
+      } else if (useLegacyAnswers && selectedAnswer) {
+        const answerExists = quiz.options.some((option) => option.label === selectedAnswer);
+        isCorrect = answerExists ? selectedAnswer === quiz.answer : null;
+      }
+
+      return {
+        quizId: quiz.id,
+        quizCode: quiz.quizCode,
+        attemptId: linkedAttempt?.id ?? null,
+        content: {
+          text: quiz.question,
+          code: quiz.code ?? null,
+          has_code: Boolean(quiz.code),
+          image: quiz.imageUrl ?? null,
+          has_image: Boolean(quiz.imageUrl),
+        },
+        options: {
+          is_code: quiz.options.some((o) => o.isCode),
+          data: Object.fromEntries(quiz.options.map((o) => [o.label, o.content])),
+        },
+        selectedAnswer,
+        correctAnswer: quiz.answer,
+        isCorrect,
+        explanation: quiz.explanation ?? '',
+      };
+    });
+
+    const answeredResults = quizResults.filter((item) => item.selectedAnswer != null);
+    const correctCount = answeredResults.filter((item) => item.isCorrect === true).length;
+    const answeredCount = answeredResults.length;
+
+    return {
+      id: session.id,
+      topicId: session.topicId,
+      topic: session.topic,
+      status: session.status,
+      startedAt: session.startedAt,
+      submittedAt: session.submittedAt,
+      durationMs:
+        session.submittedAt != null
+          ? Math.max(0, session.submittedAt.getTime() - session.startedAt.getTime())
+          : null,
+      answeredCount,
+      correctCount,
+      score: answeredCount > 0 ? correctCount / answeredCount : 0,
+      quizResults,
+    };
   }
 
   async getMyProgress(req: ExpressRequest) {
@@ -734,6 +950,75 @@ export class AttemptService {
     );
 
     return Object.fromEntries(entries) as Record<string, string>;
+  }
+
+  private async buildLegacySessionSummaries(
+    sessions: Array<{
+      id: string;
+      topicId: string;
+      answers: Prisma.JsonValue;
+    }>,
+  ): Promise<Map<string, { answeredCount: number; correctCount: number; score: number }>> {
+    const result = new Map<
+      string,
+      { answeredCount: number; correctCount: number; score: number }
+    >();
+
+    if (sessions.length === 0) {
+      return result;
+    }
+
+    const topicIds = [...new Set(sessions.map((session) => session.topicId))];
+    const quizzes = await this.prisma.quiz.findMany({
+      where: { topicId: { in: topicIds } },
+      select: {
+        id: true,
+        topicId: true,
+        answer: true,
+        options: {
+          select: { label: true },
+        },
+      },
+    });
+
+    const quizzesByTopic = new Map<string, typeof quizzes>();
+    for (const quiz of quizzes) {
+      const list = quizzesByTopic.get(quiz.topicId) ?? [];
+      list.push(quiz);
+      quizzesByTopic.set(quiz.topicId, list);
+    }
+
+    for (const session of sessions) {
+      const answers = this.parseAnswers(session.answers);
+      const topicQuizzes = quizzesByTopic.get(session.topicId) ?? [];
+      let answeredCount = 0;
+      let correctCount = 0;
+
+      for (const quiz of topicQuizzes) {
+        const selectedAnswer = answers[quiz.id];
+        if (!selectedAnswer) {
+          continue;
+        }
+
+        const answerExists = quiz.options.some((option) => option.label === selectedAnswer);
+        if (!answerExists) {
+          continue;
+        }
+
+        answeredCount += 1;
+        if (selectedAnswer === quiz.answer) {
+          correctCount += 1;
+        }
+      }
+
+      result.set(session.id, {
+        answeredCount,
+        correctCount,
+        score: answeredCount > 0 ? correctCount / answeredCount : 0,
+      });
+    }
+
+    return result;
   }
 
   private mapSession(session: {

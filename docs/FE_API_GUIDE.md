@@ -529,6 +529,7 @@ TypeScript snippet o Section 3.8 tai su dung duoc — chi doi URL signature sang
 > - **Single quiz submit** (`POST /quiz/:id/attempt`): response tra ve `correctAnswer` va `explanation` ngay lap tuc sau khi nop 1 cau.
 > - **Attempt detail** (`GET /attempt/me/:attemptId`): tra ve `quiz.answer` va `quiz.explanation` cho attempt cu.
 > - **Progress topic** (`GET /progress/me/topic/:topicId`): `quizStats[].correctAnswer` — dung cho man hinh on tap / xem lai lich su.
+> - **Session history** (`GET /attempt/sessions/me` + `GET /attempt/sessions/me/:sessionId`): lich su **theo tung lan nop bai** (lan 1, lan 2, ...), kem `quizResults` day du.
 
 ### 5.1 Session flow (khuyen nghi cho thi theo topic)
 
@@ -696,7 +697,7 @@ Response `data`:
 
 > Single submit tra ve `correctAnswer` va `explanation` ngay lap tuc.
 
-### 5.3 Attempt history
+### 5.3 Attempt history (theo cau)
 
 **List my attempts:** `GET /attempt/me?page=1&limit=10`
 
@@ -705,6 +706,106 @@ Optional filters: `topicId`, `quizId`.
 **Get attempt detail:** `GET /attempt/me/:attemptId`
 
 Response attempt detail bao gom `quiz.answer` va `quiz.explanation` (vi user da tung tra loi cau nay).
+
+Day la lich su **tung cau hoi** (moi dong = 1 quiz attempt). De xem lich su **theo lan nop bai**, dung Section 5.4.
+
+### 5.4 Session submission history (theo lan nop)
+
+Dung khi FE can man hinh: "Lan nop 1 / Lan nop 2 / ..." cho 1 topic.
+
+#### List submitted sessions
+
+`GET /attempt/sessions/me?topicId=<topicId>&page=1&limit=10`
+
+Query:
+
+| Param | Required | Mo ta |
+|---|---|---|
+| `topicId` | Khong bat buoc (khuyen nghi) | Loc theo topic |
+| `page` | Khong | Mac dinh `1` |
+| `limit` | Khong | Mac dinh `10`, max `100` |
+
+Chi tra session `status = SUBMITTED` cua **chinh user dang login**, moi nhat truoc.
+
+Response `data`:
+
+```json
+{
+  "items": [
+    {
+      "id": "<sessionId>",
+      "topicId": "...",
+      "topic": { "id": "...", "name": "...", "slug": "..." },
+      "status": "SUBMITTED",
+      "startedAt": "2026-07-13T08:00:00.000Z",
+      "submittedAt": "2026-07-13T08:12:00.000Z",
+      "durationMs": 720000,
+      "answeredCount": 8,
+      "correctCount": 6,
+      "score": 0.75
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "total": 3,
+    "totalPages": 1,
+    "hasNext": false,
+    "hasPrevious": false
+  }
+}
+```
+
+FE co the hien thi danh sach theo thu tu `submittedAt` (moi → cu) thanh "Lan nop 1" = item moi nhat, hoac danh so nguoc theo `total`.
+
+#### Get one submitted session detail
+
+`GET /attempt/sessions/me/:sessionId`
+
+Response `data` giong format ket qua submit (co `quizResults[]`):
+
+```json
+{
+  "id": "<sessionId>",
+  "topicId": "...",
+  "topic": { "id": "...", "name": "...", "slug": "..." },
+  "status": "SUBMITTED",
+  "startedAt": "2026-07-13T08:00:00.000Z",
+  "submittedAt": "2026-07-13T08:12:00.000Z",
+  "durationMs": 720000,
+  "answeredCount": 8,
+  "correctCount": 6,
+  "score": 0.75,
+  "quizResults": [
+    {
+      "quizId": "...",
+      "quizCode": "q_001",
+      "attemptId": "...",
+      "content": {
+        "text": "...",
+        "code": null,
+        "has_code": false,
+        "image": null,
+        "has_image": false
+      },
+      "options": {
+        "is_code": false,
+        "data": { "1": "A", "2": "B", "3": "C", "4": "D" }
+      },
+      "selectedAnswer": "2",
+      "correctAnswer": "2",
+      "isCorrect": true,
+      "explanation": "..."
+    }
+  ]
+}
+```
+
+Luu y:
+- Chi xem duoc session cua chinh minh; session chua nop (`IN_PROGRESS` / `EXPIRED`) se bi tu choi.
+- `quizResults` gom **tat ca cau trong topic** (ke ca cau bo qua: `selectedAnswer: null`, `isCorrect: null`).
+- Session moi (sau thay doi nay) se co `attemptId` link toi `QuizAttempt`. Session cu van xem duoc (rebuild tu `answers` JSON).
+- Sau submit, FE van dung truc tiep response submit de hien man hinh ket qua; API nay dung khi user **mo lai lich su** sau do.
 
 ---
 
@@ -1129,9 +1230,10 @@ async function createCourseWithImage(
 5. Nop bai → `POST /attempt/session/:sessionId/submit`.
 6. **Hien thi ket qua tung cau ngay tu response submit** — `quizResults[]` co san `correctAnswer`, `isCorrect`, `explanation` tung cau. Khong can goi them API.
 7. Hien thi dashboard tong → `GET /progress/me`.
+8. Xem lai lich su **theo lan nop** → `GET /attempt/sessions/me?topicId=...` roi `GET /attempt/sessions/me/:sessionId`.
 
 > **Tai sao khong can goi them `GET /progress/me/topic/:topicId` sau submit?**
-> Submit session gio tra ve `quizResults[]` day du. API progress van huu ich khi user muon **xem lai lich su** lan lam bai truoc do.
+> Submit session gio tra ve `quizResults[]` day du. API progress van huu ich khi user muon **xem lai thong ke tong hop** (accuracy sticky, quizStats). De xem tung lan nop cu the, dung `GET /attempt/sessions/me`.
 
 ### Topic image upload flow (admin)
 
