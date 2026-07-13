@@ -71,6 +71,7 @@ model QuizAttempt {
   userId         String
   quizId         String
   topicId        String
+  sessionId      String?
   selectedAnswer String
   isCorrect      Boolean
   score          Int      @default(0)
@@ -79,12 +80,14 @@ model QuizAttempt {
   durationMs     Int?
   createdAt      DateTime @default(now())
 
-  quiz           Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  topic          Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  quiz           Quiz            @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  topic          Topic           @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  session        AttemptSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
 
   @@index([userId, submittedAt])
   @@index([userId, quizId, submittedAt])
   @@index([topicId, submittedAt])
+  @@index([sessionId])
   @@map("quiz_attempts")
 }
 
@@ -274,8 +277,10 @@ model AttemptSession {
 
   topic         Topic                @relation(fields: [topicId], references: [id], onDelete: Cascade)
   currentQuiz   Quiz?                @relation(fields: [currentQuizId], references: [id], onDelete: SetNull)
+  attempts      QuizAttempt[]
 
   @@index([userId, topicId, status, updatedAt])
   @@index([userId, status, expiresAt])
+  @@index([userId, topicId, submittedAt])
   @@map("attempt_sessions")
 }
