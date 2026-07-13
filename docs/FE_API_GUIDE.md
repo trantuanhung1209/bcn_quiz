@@ -444,6 +444,7 @@ Luu y:
 - Co the mix nhieu `topicId` trong 1 batch.
 - Trung `quizCode` (trong DB hoac trong batch) → `409`.
 - Item sai → `400` kem index `quizzes[i]` (all-or-nothing, khong tao quiz nao).
+- Transaction timeout mac dinh duoc set **60s** cho bulk (toi da 100 quiz).
 
 Response `data`:
 
