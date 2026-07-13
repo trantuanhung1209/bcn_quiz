@@ -441,51 +441,56 @@ export class QuizService {
       };
     });
 
-    // Sequential transaction — tăng timeout vì bulk có thể tới 100 quiz + nested options
+    // Interactive transaction với timeout dài hơn mặc định 5s (bulk tới 100 quiz + options)
     const createdQuizzes = await this.prisma.$transaction(
-      resolved.map((input) =>
-        this.prisma.quiz.create({
-          data: {
-            quizCode: input.quizCode,
-            question: input.question,
-            code: input.code,
-            explanation: input.explanation,
-            answer: input.answer,
-            imageUrl: input.imageUrl,
-            imagePublicId: input.imagePublicId,
-            topicId: input.topicId,
-            options: {
-              create: input.options.map((option: any) => ({
-                label: option.label,
-                content: option.content,
-                isCode: option.isCode ?? false,
-              })),
+      async (tx) => {
+        const created = [];
+
+        for (const input of resolved) {
+          const quiz = await tx.quiz.create({
+            data: {
+              quizCode: input.quizCode,
+              question: input.question,
+              code: input.code,
+              explanation: input.explanation,
+              answer: input.answer,
+              imageUrl: input.imageUrl,
+              imagePublicId: input.imagePublicId,
+              topicId: input.topicId,
+              options: {
+                create: input.options.map((option: any) => ({
+                  label: option.label,
+                  content: option.content,
+                  isCode: option.isCode ?? false,
+                })),
+              },
             },
-          },
-          include: {
-            topic: true,
-            options: true,
-          },
-        }),
-      ),
+            include: {
+              topic: true,
+              options: true,
+            },
+          });
+
+          if (!quiz) {
+            throw new InternalServerErrorException(
+              `Failed to create quiz at quizzes[${input.index}]`,
+            );
+          }
+
+          created.push(quiz);
+        }
+
+        return created;
+      },
       {
         maxWait: 15_000,
         timeout: 60_000,
       },
     );
 
-    const items = createdQuizzes.map((quiz, index) => {
-      if (!quiz) {
-        throw new InternalServerErrorException(
-          `Failed to create quiz at quizzes[${resolved[index]?.index ?? index}]`,
-        );
-      }
-      return mapQuiz(toRawQuiz(quiz));
-    });
-
     return {
-      items,
-      count: items.length,
+      items: createdQuizzes.map((quiz) => mapQuiz(toRawQuiz(quiz))),
+      count: createdQuizzes.length,
     };
   }
 
