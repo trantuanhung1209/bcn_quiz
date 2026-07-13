@@ -441,7 +441,7 @@ export class QuizService {
       };
     });
 
-    // Sequential transaction (không dùng interactive tx) — ổn định hơn với connection pooler
+    // Sequential transaction — tăng timeout vì bulk có thể tới 100 quiz + nested options
     const createdQuizzes = await this.prisma.$transaction(
       resolved.map((input) =>
         this.prisma.quiz.create({
@@ -468,6 +468,10 @@ export class QuizService {
           },
         }),
       ),
+      {
+        maxWait: 15_000,
+        timeout: 60_000,
+      },
     );
 
     const items = createdQuizzes.map((quiz, index) => {
