@@ -845,16 +845,86 @@ Rule hoan thanh course:
 
 | Method | Endpoint | Ghi chu |
 |--------|----------|---------|
-| `GET` | `/course?page=1&limit=10` | |
+| `GET` | `/course?page=1&limit=10` | Catalog tat ca course |
+| `GET` | `/course/progress/me` | Khoa hoc **toi dang lam / da hoan thanh** (co phan trang) |
 | `GET` | `/course/slug/:slug` | |
 | `GET` | `/course/:id` | |
 | `GET` | `/course/:id/topics?page=1&limit=10` | |
-| `GET` | `/course/:id/progress/me` | |
+| `GET` | `/course/:id/progress/me` | Chi tiet progress **1** course |
 | `GET` | `/course/:id/project-submission/me` | |
 | `POST` | `/course/:id/upload/signature` | Lay signature upload Cloudinary (project file) |
 | `POST` | `/course/:id/project-submission` | Submit metadata file |
 | `PATCH` | `/course/:id/project-submission/:submissionId` | Cap nhat submission |
 | `DELETE` | `/course/:id/project-submission/:submissionId` | Xoa submission |
+
+#### List my courses (dang lam / da xong)
+
+`GET /course/progress/me?page=1&limit=10&scope=active`
+
+Chi tra cac course ma user **da co ban ghi progress** (da bat dau lam).
+
+Query:
+
+| Param | Required | Mo ta |
+|---|---|---|
+| `page` | Khong | Mac dinh `1` |
+| `limit` | Khong | Mac dinh `10`, max `100` |
+| `scope` | Khong | `active` = dang lam (chua COMPLETED); `completed` = da hoan thanh |
+| `status` | Khong | Loc dung 1 status: `IN_PROGRESS` \| `TOPICS_COMPLETED` \| `PROJECT_PENDING_APPROVAL` \| `COMPLETED`. Neu co `status` thi bo qua `scope`. |
+
+Vi du tab FE:
+- Dang hoc: `GET /course/progress/me?scope=active`
+- Da xong: `GET /course/progress/me?scope=completed`
+- Tat ca: `GET /course/progress/me`
+
+Response `data`:
+
+```json
+{
+  "items": [
+    {
+      "id": "<progressId>",
+      "userId": "...",
+      "courseId": "...",
+      "topicProgressPercent": 50,
+      "projectProgressPercent": 0,
+      "progressPercent": 50,
+      "status": "PROJECT_PENDING_APPROVAL",
+      "topicsCompletedAt": "2026-07-16T08:00:00.000Z",
+      "projectApprovedAt": null,
+      "completedAt": null,
+      "createdAt": "2026-07-10T08:00:00.000Z",
+      "updatedAt": "2026-07-16T08:00:00.000Z",
+      "course": {
+        "id": "...",
+        "name": "JavaScript Fundamentals",
+        "slug": "javascript-fundamentals",
+        "description": "...",
+        "imageUrl": "https://...",
+        "hasProject": true,
+        "topicWeight": 50,
+        "projectWeight": 50,
+        "topicCount": 8,
+        "projectRequirement": {
+          "id": "...",
+          "title": "Mini project",
+          "isRequired": true
+        }
+      }
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "total": 2,
+    "totalPages": 1,
+    "hasNext": false,
+    "hasPrevious": false
+  }
+}
+```
+
+Sap xep: `updatedAt` moi nhat truoc.
 
 Upload project su dung direct upload Cloudinary:
 - Cho phep: `.zip`, `.rar`, `.pdf`, `.docx`
@@ -1208,7 +1278,7 @@ async function createCourseWithImage(
 ### Course + Project flow
 
 1. Login → lay access token.
-2. Lay danh sach courses: `GET /course`.
+2. Lay danh sach courses: `GET /course` (catalog) hoac `GET /course/progress/me` (khoa hoc cua toi).
 3. Lay danh sach topics: `GET /topic` hoac `GET /course/:id/topics`.
 4. Trong qua trinh hoc, theo doi tien do:
    - `GET /course/:id/progress/me`
@@ -1218,6 +1288,7 @@ async function createCourseWithImage(
 7. Neu can cap nhat bai nop: `PATCH /course/:id/project-submission/:submissionId`.
 8. Sau khi admin approve → refresh `GET /course/:id/progress/me` de thay 100%.
 9. Lay chung chi: `GET /certificate/me`.
+10. Tab "Dang hoc" / "Da xong": `GET /course/progress/me?scope=active|completed`.
 
 > **Luu y:** Khi khoa hoc dat 100% va chung chi duoc cap, backend tu dong ban event `COURSE_COMPLETE` sang he thong Profiles de cap nhat Timeline.
 

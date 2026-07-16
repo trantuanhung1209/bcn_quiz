@@ -6,13 +6,21 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, ProjectSubmissionStatus } from '@prisma/client';
+import {
+  CourseProgressStatus,
+  Prisma,
+  ProjectSubmissionStatus,
+} from '@prisma/client';
 import type { Request as ExpressRequest } from 'express';
 import { extname } from 'path';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { CreateProjectSubmissionDto } from './dto/create-project-submission.dto';
 import { CreateUploadSignatureDto } from './dto/create-upload-signature.dto';
 import { ListProjectSubmissionsQueryDto } from './dto/list-project-submissions-query.dto';
+import {
+  MyCourseProgressQueryDto,
+  MyCourseProgressScope,
+} from './dto/my-course-progress-query.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { ProjectSubmissionFileMetadataDto } from './dto/project-submission-file-metadata.dto';
 import { ReviewDecision, ReviewProjectSubmissionDto } from './dto/review-project-submission.dto';
@@ -772,6 +780,85 @@ export class CourseService {
     return this.mapProjectSubmission(updated);
   }
 
+  async getMyCoursesProgress(query: MyCourseProgressQueryDto, req: ExpressRequest) {
+    const userId = this.extractUserId(req);
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.UserCourseProgressWhereInput = {
+      userId,
+      ...this.buildMyCourseProgressStatusFilter(query),
+    };
+
+    const [rows, total] = await Promise.all([
+      this.prisma.userCourseProgress.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        include: {
+          course: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              description: true,
+              imageUrl: true,
+              hasProject: true,
+              topicWeight: true,
+              projectWeight: true,
+              _count: {
+                select: {
+                  topics: true,
+                },
+              },
+              projectRequirement: {
+                select: {
+                  id: true,
+                  title: true,
+                  isRequired: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.userCourseProgress.count({ where }),
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
+    return {
+      items: rows.map((row) => {
+        const { course, ...progress } = row;
+        return {
+          ...progress,
+          course: {
+            id: course.id,
+            name: course.name,
+            slug: course.slug,
+            description: course.description,
+            imageUrl: course.imageUrl,
+            hasProject: course.hasProject,
+            topicWeight: course.topicWeight,
+            projectWeight: course.projectWeight,
+            topicCount: course._count.topics,
+            projectRequirement: course.projectRequirement,
+          },
+        };
+      }),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrevious: page > 1,
+      },
+    };
+  }
+
   async getMyCourseProgress(courseId: string, req: ExpressRequest) {
     const userId = this.extractUserId(req);
     await this.ensureCourseExists(courseId);
@@ -807,6 +894,32 @@ export class CourseService {
         ? this.mapProjectSubmission(latestSubmission)
         : null,
     };
+  }
+
+  private buildMyCourseProgressStatusFilter(
+    query: MyCourseProgressQueryDto,
+  ): Prisma.UserCourseProgressWhereInput {
+    if (query.status) {
+      return { status: query.status };
+    }
+
+    if (query.scope === MyCourseProgressScope.COMPLETED) {
+      return { status: CourseProgressStatus.COMPLETED };
+    }
+
+    if (query.scope === MyCourseProgressScope.ACTIVE) {
+      return {
+        status: {
+          in: [
+            CourseProgressStatus.IN_PROGRESS,
+            CourseProgressStatus.TOPICS_COMPLETED,
+            CourseProgressStatus.PROJECT_PENDING_APPROVAL,
+          ],
+        },
+      };
+    }
+
+    return {};
   }
 
   private mapProjectSubmission(submission: ProjectSubmissionWithFiles) {

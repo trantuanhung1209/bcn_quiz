@@ -17,6 +17,7 @@ import { CreateProjectSubmissionDto } from './dto/create-project-submission.dto'
 import { CreateCourseDto } from './dto/create-course.dto';
 import { CreateUploadSignatureDto } from './dto/create-upload-signature.dto';
 import { ListProjectSubmissionsQueryDto } from './dto/list-project-submissions-query.dto';
+import { MyCourseProgressQueryDto } from './dto/my-course-progress-query.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { ReviewProjectSubmissionDto } from './dto/review-project-submission.dto';
 import { UpdateProjectSubmissionDto } from './dto/update-project-submission.dto';
@@ -36,6 +37,15 @@ export class CourseController {
   @Get('slug/:slug')
   async getCourseBySlug(@Param('slug') slug: string) {
     return this.courseService.getCourseBySlug(slug);
+  }
+
+  /** Must be registered before `:id` routes so `progress` is not treated as an id. */
+  @Get('progress/me')
+  async getMyCoursesProgress(
+    @Query() query: MyCourseProgressQueryDto,
+    @Request() req: ExpressRequest,
+  ) {
+    return this.courseService.getMyCoursesProgress(query, req);
   }
 
   @Get(':id/topics')
