@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from '../common/storage/cloudinary.service';
+import { CourseProgressService } from '../course/course-progress.service';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { CreateQuizDto } from './dto/create-quiz.dto';
 import { BulkCreateQuizzesDto } from './dto/bulk-create-quizzes.dto';
@@ -165,6 +166,7 @@ export class QuizService {
   constructor(
     private prisma: PrismaService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly courseProgressService: CourseProgressService,
   ) {}
 
   private async validateQuizInput(
@@ -320,6 +322,8 @@ export class QuizService {
         options: true,
       },
     });
+
+    await this.courseProgressService.reopenTopicProgressAndCourses(input.topicId);
 
     return mapQuiz(toRawQuiz(quiz));
   }
@@ -487,6 +491,14 @@ export class QuizService {
         timeout: 60_000,
       },
     );
+
+    const affectedTopicIds = [
+      ...new Set(createdQuizzes.map((quiz) => quiz.topicId).filter(Boolean)),
+    ];
+
+    for (const topicId of affectedTopicIds) {
+      await this.courseProgressService.reopenTopicProgressAndCourses(topicId);
+    }
 
     return {
       items: createdQuizzes.map((quiz) => mapQuiz(toRawQuiz(quiz))),
