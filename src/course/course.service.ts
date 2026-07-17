@@ -813,6 +813,27 @@ export class CourseService {
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
 
+    // Always recompute against current curriculum before listing, otherwise
+    // FE keeps showing stale 100% until the user submits a new attempt.
+    const allProgressRows = await this.prisma.userCourseProgress.findMany({
+      where: { userId },
+      select: { courseId: true },
+    });
+
+    const concurrency = 10;
+    for (let i = 0; i < allProgressRows.length; i += concurrency) {
+      const batch = allProgressRows.slice(i, i + concurrency);
+      await Promise.all(
+        batch.map((row) =>
+          this.courseProgressService.evaluateCourseProgress(
+            userId,
+            row.courseId,
+            req,
+          ),
+        ),
+      );
+    }
+
     const where: Prisma.UserCourseProgressWhereInput = {
       userId,
       ...this.buildMyCourseProgressStatusFilter(query),
