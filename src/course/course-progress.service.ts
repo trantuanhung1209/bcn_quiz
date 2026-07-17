@@ -31,6 +31,69 @@ export class CourseProgressService {
     }
   }
 
+  /**
+   * Option B: when course curriculum changes (topics / hasProject),
+   * recompute progress for every learner who already has a progress row.
+   * COMPLETED users may be demoted; certificates are kept (not deleted).
+   */
+  async reevaluateAllUsersForCourse(courseId: string): Promise<number> {
+    const rows = await this.prisma.userCourseProgress.findMany({
+      where: { courseId },
+      select: { userId: true },
+    });
+
+    const userIds = rows.map((row) => row.userId);
+    const concurrency = 10;
+
+    for (let i = 0; i < userIds.length; i += concurrency) {
+      const batch = userIds.slice(i, i + concurrency);
+      await Promise.all(
+        batch.map((userId) => this.evaluateCourseProgress(userId, courseId)),
+      );
+    }
+
+    this.logger.log(
+      `[reevaluateAllUsersForCourse] courseId=${courseId} users=${userIds.length}`,
+    );
+
+    return userIds.length;
+  }
+
+  /**
+   * Option B: new quizzes invalidate sticky topic completion, then reopen
+   * linked course progress for affected learners.
+   */
+  async reopenTopicProgressAndCourses(topicId: string): Promise<number> {
+    const cleared = await this.prisma.topicProgress.updateMany({
+      where: {
+        topicId,
+        isCompleted: true,
+      },
+      data: {
+        isCompleted: false,
+        completedAt: null,
+      },
+    });
+
+    const links = await this.prisma.courseTopic.findMany({
+      where: { topicId },
+      select: { courseId: true },
+    });
+
+    const courseIds = [...new Set(links.map((item) => item.courseId))];
+    let totalUsers = 0;
+
+    for (const courseId of courseIds) {
+      totalUsers += await this.reevaluateAllUsersForCourse(courseId);
+    }
+
+    this.logger.log(
+      `[reopenTopicProgressAndCourses] topicId=${topicId} clearedTopicProgress=${cleared.count} courses=${courseIds.length} userEvals=${totalUsers}`,
+    );
+
+    return totalUsers;
+  }
+
   async evaluateCourseProgress(
     userId: string,
     courseId: string,
@@ -70,6 +133,10 @@ export class CourseProgressService {
     const topicIds = course.topics.map((item) => item.topicId);
     const totalTopics = topicIds.length;
 
+    // Self-heal on read: quizzes added after topic completion must reopen that topic
+    // even if the admin create-path fan-out was missed / not deployed yet.
+    await this.healStaleTopicCompletions(userId, topicIds);
+
     const topicProgresses = totalTopics
       ? await this.prisma.topicProgress.findMany({
           where: {
@@ -86,8 +153,10 @@ export class CourseProgressService {
         })
       : [];
 
+    // Use sticky isCompleted only. Accuracy is NOT enough after curriculum reopen
+    // (new quizzes clear isCompleted while historical accuracy may still be high).
     const completedTopicCount = topicProgresses.filter(
-      (item) => item.isCompleted || item.accuracy >= 0.8,
+      (item) => item.isCompleted,
     ).length;
 
     const topicMilestoneCompleted =
@@ -189,9 +258,28 @@ export class CourseProgressService {
     });
 
     if (
+      existing?.status === CourseProgressStatus.COMPLETED &&
+      status !== CourseProgressStatus.COMPLETED
+    ) {
+      this.logger.log(
+        `[evaluateCourseProgress] reopen demote userId=${userId} courseId=${courseId} ${existing.status} -> ${status} progress=${progressPercent}`,
+      );
+    }
+
+    if (
       status === CourseProgressStatus.COMPLETED &&
       existing?.status !== CourseProgressStatus.COMPLETED
     ) {
+      const existingCertificate = await this.prisma.certificate.findUnique({
+        where: {
+          userId_courseId: {
+            userId,
+            courseId,
+          },
+        },
+        select: { id: true },
+      });
+
       await this.prisma.certificate.upsert({
         where: {
           userId_courseId: {
@@ -201,6 +289,11 @@ export class CourseProgressService {
         },
         update: {
           issuedAt: now,
+          metadata: {
+            topicProgressPercent,
+            projectProgressPercent,
+            refreshed: true,
+          },
         },
         create: {
           userId,
@@ -214,7 +307,8 @@ export class CourseProgressService {
         },
       });
 
-      if (req && this.extractUserId(req) === userId) {
+      // Timeline only on first completion — re-complete after reopen refreshes cert only.
+      if (!existingCertificate && req && this.extractUserId(req) === userId) {
         await this.profilesService.createTimelineEvent(req, {
           eventType: 'COURSE_COMPLETE',
           title: `Hoàn thành khóa học ${course.name}`,
@@ -264,6 +358,82 @@ export class CourseProgressService {
 
     this.logger.log(
       `[evaluateCourseProgress] userId=${userId} courseId=${courseId} status=${status} progress=${progressPercent}`,
+    );
+  }
+
+  /**
+   * If a topic was marked completed before newer quizzes were added,
+   * clear sticky completion so course % can drop without waiting for a new attempt.
+   */
+  private async healStaleTopicCompletions(
+    userId: string,
+    topicIds: string[],
+  ): Promise<void> {
+    if (topicIds.length === 0) {
+      return;
+    }
+
+    const completedProgresses = await this.prisma.topicProgress.findMany({
+      where: {
+        userId,
+        topicId: { in: topicIds },
+        isCompleted: true,
+      },
+      select: {
+        topicId: true,
+        completedAt: true,
+        updatedAt: true,
+      },
+    });
+
+    if (completedProgresses.length === 0) {
+      return;
+    }
+
+    const latestQuizByTopic = await this.prisma.quiz.groupBy({
+      by: ['topicId'],
+      where: {
+        topicId: { in: completedProgresses.map((item) => item.topicId) },
+      },
+      _max: {
+        createdAt: true,
+      },
+    });
+
+    const latestQuizCreatedAt = new Map(
+      latestQuizByTopic.map((item) => [item.topicId, item._max.createdAt]),
+    );
+
+    const topicIdsToClear = completedProgresses
+      .filter((progress) => {
+        const latestQuizAt = latestQuizCreatedAt.get(progress.topicId);
+        if (!latestQuizAt) {
+          return false;
+        }
+
+        const completedAt = progress.completedAt ?? progress.updatedAt;
+        return latestQuizAt.getTime() > completedAt.getTime();
+      })
+      .map((progress) => progress.topicId);
+
+    if (topicIdsToClear.length === 0) {
+      return;
+    }
+
+    await this.prisma.topicProgress.updateMany({
+      where: {
+        userId,
+        topicId: { in: topicIdsToClear },
+        isCompleted: true,
+      },
+      data: {
+        isCompleted: false,
+        completedAt: null,
+      },
+    });
+
+    this.logger.log(
+      `[healStaleTopicCompletions] userId=${userId} clearedTopics=${topicIdsToClear.length}`,
     );
   }
 

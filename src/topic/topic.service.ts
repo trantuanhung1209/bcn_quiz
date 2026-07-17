@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from '../common/storage/cloudinary.service';
+import { CourseProgressService } from '../course/course-progress.service';
 import { CreateTopicDto } from './dto/create-topic.dto';
 import { UpdateTopicDto } from './dto/update-topic.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
@@ -101,6 +102,7 @@ export class TopicService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly courseProgressService: CourseProgressService,
   ) {}
 
   async getQuizzesByTopicId(topicId: string, query: PaginationQueryDto) {
@@ -277,8 +279,8 @@ export class TopicService {
       this.validateImageFields(data.imageUrl, data.imagePublicId);
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const topic = await tx.topic.create({
+    const topic = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.topic.create({
         data: {
           name: data.name,
           slug: data.slug,
@@ -298,13 +300,17 @@ export class TopicService {
       await tx.courseTopic.create({
         data: {
           courseId: data.courseId,
-          topicId: topic.id,
+          topicId: created.id,
           sortOrder,
         },
       });
 
-      return topic;
+      return created;
     });
+
+    await this.courseProgressService.reevaluateAllUsersForCourse(data.courseId);
+
+    return topic;
   }
 
   async updateTopic(id: string, data: UpdateTopicDto) {

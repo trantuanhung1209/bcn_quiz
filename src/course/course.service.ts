@@ -243,9 +243,14 @@ export class CourseService {
       }
     }
 
+    const existingCourse = await this.prisma.course.findUnique({
+      where: { id },
+      select: { hasProject: true },
+    });
+
     const hasProject = data.hasProject;
 
-    return this.prisma.course.update({
+    const updated = await this.prisma.course.update({
       where: { id },
       data: {
         ...(data.name !== undefined && { name: data.name }),
@@ -264,6 +269,16 @@ export class CourseService {
         ...(data.projectWeight !== undefined && typeof hasProject !== 'boolean' && { projectWeight: data.projectWeight }),
       },
     });
+
+    if (
+      typeof hasProject === 'boolean' &&
+      existingCourse &&
+      existingCourse.hasProject !== hasProject
+    ) {
+      await this.courseProgressService.reevaluateAllUsersForCourse(id);
+    }
+
+    return updated;
   }
 
   async deleteCourse(id: string) {
@@ -318,6 +333,8 @@ export class CourseService {
       });
     });
 
+    await this.courseProgressService.reevaluateAllUsersForCourse(courseId);
+
     return this.getCourseById(courseId);
   }
 
@@ -328,8 +345,8 @@ export class CourseService {
     await this.ensureCourseExists(courseId);
     await this.ensureTopicSlugUnique(data.slug);
 
-    return this.prisma.$transaction(async (tx) => {
-      const topic = await tx.topic.create({
+    const topic = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.topic.create({
         data: {
           name: data.name,
           slug: data.slug,
@@ -345,13 +362,17 @@ export class CourseService {
       await tx.courseTopic.create({
         data: {
           courseId,
-          topicId: topic.id,
+          topicId: created.id,
           sortOrder: (lastLink?.sortOrder ?? 0) + 1,
         },
       });
 
-      return topic;
+      return created;
     });
+
+    await this.courseProgressService.reevaluateAllUsersForCourse(courseId);
+
+    return topic;
   }
 
   async upsertProjectRequirement(courseId: string, data: UpsertCourseProjectDto) {
@@ -377,6 +398,7 @@ export class CourseService {
       },
     });
 
+    let enabledProject = false;
     if (!course.hasProject) {
       await this.prisma.course.update({
         where: { id: courseId },
@@ -386,6 +408,11 @@ export class CourseService {
           projectWeight: 50,
         },
       });
+      enabledProject = true;
+    }
+
+    if (enabledProject) {
+      await this.courseProgressService.reevaluateAllUsersForCourse(courseId);
     }
 
     return requirement;
@@ -785,6 +812,27 @@ export class CourseService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
+
+    // Always recompute against current curriculum before listing, otherwise
+    // FE keeps showing stale 100% until the user submits a new attempt.
+    const allProgressRows = await this.prisma.userCourseProgress.findMany({
+      where: { userId },
+      select: { courseId: true },
+    });
+
+    const concurrency = 10;
+    for (let i = 0; i < allProgressRows.length; i += concurrency) {
+      const batch = allProgressRows.slice(i, i + concurrency);
+      await Promise.all(
+        batch.map((row) =>
+          this.courseProgressService.evaluateCourseProgress(
+            userId,
+            row.courseId,
+            req,
+          ),
+        ),
+      );
+    }
 
     const where: Prisma.UserCourseProgressWhereInput = {
       userId,
