@@ -8,7 +8,7 @@ import { ArrayMaxSize, ArrayMinSize, IsArray, IsObject } from 'class-validator';
 export class BulkCreateQuizzesDto {
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(100)
+  @ArrayMaxSize(200)
   @IsObject({ each: true })
   quizzes!: Record<string, unknown>[];
 }

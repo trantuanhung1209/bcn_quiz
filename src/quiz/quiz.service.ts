@@ -479,7 +479,7 @@ export class QuizService {
       };
     });
 
-    // Interactive transaction với timeout dài hơn mặc định 5s (bulk tới 100 quiz + options)
+    // Interactive transaction với timeout dài hơn mặc định 5s (bulk tới 200 quiz + options)
     const createdQuizzes = await this.prisma.$transaction(
       async (tx) => {
         const created = [];
@@ -521,8 +521,8 @@ export class QuizService {
         return created;
       },
       {
-        maxWait: 15_000,
-        timeout: 60_000,
+        maxWait: 20_000,
+        timeout: 120_000,
       },
     );
 
