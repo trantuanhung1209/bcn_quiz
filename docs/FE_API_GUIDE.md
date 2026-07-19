@@ -58,6 +58,7 @@ Tai lieu nay tong hop toan bo API hien co de frontend tich hop nhanh.
 
 3. **Hieu suat**
    - Toan bo JSON response tu dong nen `gzip`. FE khong can config them.
+   - Backend cache ket qua `GET /auth/me` (Profiles) trong bo nho theo token (~30s, env `AUTH_CACHE_TTL_MS`) de giam latency request protected. FE van nen gui Bearer token nhu binh thuong; khong can doi flow.
 
 ### Public APIs
 
