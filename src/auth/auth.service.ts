@@ -1,4 +1,9 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { AxiosError } from 'axios';
 import { firstValueFrom } from 'rxjs';
@@ -6,14 +11,26 @@ import { LoginDto } from './dto/login.dto';
 import { VerifyTotpDto } from './dto/verify-totp.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
 import { SendEmailOtpDto } from './dto/send-email-otp.dto';
-import { appendBearerTokenAsCookie } from './auth-header.util';
+import {
+  appendBearerTokenAsCookie,
+  extractBearerToken,
+} from './auth-header.util';
+import { AuthTokenCache } from './auth-token.cache';
 
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
   private readonly logger = new Logger(AuthService.name);
   private readonly baseUrl = process.env.PROFILES_API_BASE_URL;
+  private readonly tokenCache = new AuthTokenCache<unknown>(
+    Number(process.env.AUTH_CACHE_TTL_MS ?? 30_000),
+    Number(process.env.AUTH_CACHE_MAX_ENTRIES ?? 2_000),
+  );
 
   constructor(private readonly httpService: HttpService) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.warmupProfilesConnection();
+  }
 
   async login(
     payload: LoginDto,
@@ -264,6 +281,8 @@ export class AuthService {
       `[logout] forward to profiles auth/logout hasCookie=${Boolean(cookies)} hasAuthorization=${Boolean(authorization)}`,
     );
 
+    this.invalidateTokenCache(cookies, authorization);
+
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -313,43 +332,130 @@ export class AuthService {
       throw new UnauthorizedException('Missing authentication token/cookie');
     }
 
-    this.logger.log(
-      `[validateToken] forward to profiles auth/me hasToken=${Boolean(token)} hasCookie=${Boolean(cookies)} hasAuthorization=${Boolean(authorization)}`,
-    );
+    const cacheKey = this.buildCacheKey(token, cookies, authorization);
 
     try {
-      const headers: Record<string, string> = {};
+      return await this.tokenCache.getOrLoad(cacheKey, async () => {
+        const startedAt = Date.now();
+        this.logger.debug(
+          `[validateToken] forward to profiles auth/me hasToken=${Boolean(token)} hasCookie=${Boolean(cookies)} hasAuthorization=${Boolean(authorization)}`,
+        );
 
-      const authHeader =
-        authorization ?? (token ? `Bearer ${token}` : undefined);
+        const headers: Record<string, string> = {};
 
-      if (authHeader) {
-        headers.Authorization = authHeader;
-      }
+        const authHeader =
+          authorization ?? (token ? `Bearer ${token}` : undefined);
 
-      const cookieHeader = appendBearerTokenAsCookie(
-        cookies,
-        authHeader,
-        'access_token',
-      );
+        if (authHeader) {
+          headers.Authorization = authHeader;
+        }
 
-      if (cookieHeader) {
-        headers.Cookie = cookieHeader;
-      }
+        const cookieHeader = appendBearerTokenAsCookie(
+          cookies,
+          authHeader,
+          'access_token',
+        );
 
-      const response = await firstValueFrom(
-        this.httpService.get(`${this.baseUrl}/auth/me`, {
-          headers,
-        }),
-      );
+        if (cookieHeader) {
+          headers.Cookie = cookieHeader;
+        }
 
-      this.logger.log(`[validateToken] success status=${response.status}`);
-      return response.data;
+        const response = await firstValueFrom(
+          this.httpService.get(`${this.baseUrl}/auth/me`, {
+            headers,
+            timeout: Number(process.env.PROFILES_HTTP_TIMEOUT_MS ?? 5000),
+          }),
+        );
+
+        this.logger.debug(
+          `[validateToken] success status=${response.status} durationMs=${Date.now() - startedAt}`,
+        );
+        return response.data;
+      });
     } catch (error) {
+      this.tokenCache.delete(cacheKey);
       this.throwUpstreamAuthError(
         error,
         'validateToken',
         'Invalid token or unauthorized',
+      );
+    }
+  }
+
+  private buildCacheKey(
+    token?: string,
+    cookies?: string,
+    authorization?: string,
+  ): string {
+    const authHeader = authorization ?? (token ? `Bearer ${token}` : undefined);
+    const cookieHeader = appendBearerTokenAsCookie(
+      cookies,
+      authHeader,
+      'access_token',
+    );
+
+    return AuthTokenCache.hashCredentials([authHeader, cookieHeader]);
+  }
+
+  private invalidateTokenCache(
+    cookies?: string,
+    authorization?: string,
+  ): void {
+    const bearerToken = extractBearerToken(authorization);
+    const cookieToken = this.extractCookieToken(cookies);
+    const token = bearerToken ?? cookieToken;
+
+    // Delete both the guard-normalized key and the raw header key.
+    this.tokenCache.delete(this.buildCacheKey(token, cookies, authorization));
+    this.tokenCache.delete(
+      this.buildCacheKey(undefined, cookies, authorization),
+    );
+  }
+
+  private extractCookieToken(cookieHeader?: string): string | undefined {
+    if (!cookieHeader) {
+      return undefined;
+    }
+
+    const cookies = cookieHeader.split(';').map((part) => part.trim());
+    const tokenKeys = ['token', 'accessToken', 'access_token'];
+
+    for (const key of tokenKeys) {
+      const matched = cookies.find((part) => part.startsWith(`${key}=`));
+      if (matched) {
+        return decodeURIComponent(matched.slice(`${key}=`.length));
+      }
+    }
+
+    return undefined;
+  }
+
+  private async warmupProfilesConnection(): Promise<void> {
+    if (!this.baseUrl) {
+      this.logger.warn(
+        '[warmup] PROFILES_API_BASE_URL is not set; skip connection warmup',
+      );
+      return;
+    }
+
+    const startedAt = Date.now();
+
+    try {
+      // Intentionally unauthenticated: 401 still opens DNS/TLS/keep-alive sockets.
+      await firstValueFrom(
+        this.httpService.get(`${this.baseUrl}/auth/me`, {
+          timeout: Number(process.env.PROFILES_WARMUP_TIMEOUT_MS ?? 3000),
+          validateStatus: () => true,
+        }),
+      );
+      this.logger.log(
+        `[warmup] profiles connection ready durationMs=${Date.now() - startedAt}`,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `[warmup] profiles connection warmup failed durationMs=${Date.now() - startedAt}: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
       );
     }
   }

@@ -746,11 +746,17 @@ export class CourseService {
   ) {
     await this.ensureCourseExists(courseId);
 
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 100;
+    const skip = (page - 1) * limit;
+
     const submissions = await this.prisma.projectSubmission.findMany({
       where: {
         courseId,
         ...(query.status ? { status: query.status } : {}),
       },
+      skip,
+      take: limit,
       orderBy: {
         submittedAt: 'desc',
       },
@@ -759,6 +765,7 @@ export class CourseService {
       },
     });
 
+    // Keep array response for existing admin FE; page/limit cap unbounded reads.
     return submissions.map((submission) => this.mapProjectSubmission(submission));
   }
 
@@ -813,72 +820,75 @@ export class CourseService {
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
 
-    // Always recompute against current curriculum before listing, otherwise
-    // FE keeps showing stale 100% until the user submits a new attempt.
-    const allProgressRows = await this.prisma.userCourseProgress.findMany({
-      where: { userId },
-      select: { courseId: true },
-    });
-
-    const concurrency = 10;
-    for (let i = 0; i < allProgressRows.length; i += concurrency) {
-      const batch = allProgressRows.slice(i, i + concurrency);
-      await Promise.all(
-        batch.map((row) =>
-          this.courseProgressService.evaluateCourseProgress(
-            userId,
-            row.courseId,
-            req,
-          ),
-        ),
-      );
-    }
-
     const where: Prisma.UserCourseProgressWhereInput = {
       userId,
       ...this.buildMyCourseProgressStatusFilter(query),
     };
 
-    const [rows, total] = await Promise.all([
+    // Page-first: only heal/recompute the current page (not every enrolled course).
+    // Curriculum admin writes already fan-out reevaluation; Profiles sync stays on write paths.
+    const [pageRows, total] = await Promise.all([
       this.prisma.userCourseProgress.findMany({
         where,
         skip,
         take: limit,
         orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
-        include: {
-          course: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              description: true,
-              imageUrl: true,
-              hasProject: true,
-              topicWeight: true,
-              projectWeight: true,
-              _count: {
-                select: {
-                  topics: true,
-                },
-              },
-              projectRequirement: {
-                select: {
-                  id: true,
-                  title: true,
-                  isRequired: true,
-                },
-              },
-            },
-          },
-        },
+        select: { courseId: true },
       }),
       this.prisma.userCourseProgress.count({ where }),
     ]);
 
+    await this.courseProgressService.evaluateCourseProgressBatch(
+      userId,
+      pageRows.map((row) => row.courseId),
+    );
+
+    const courseIds = pageRows.map((row) => row.courseId);
+    const rows =
+      courseIds.length === 0
+        ? []
+        : await this.prisma.userCourseProgress.findMany({
+            where: {
+              userId,
+              courseId: { in: courseIds },
+            },
+            include: {
+              course: {
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                  description: true,
+                  imageUrl: true,
+                  hasProject: true,
+                  topicWeight: true,
+                  projectWeight: true,
+                  _count: {
+                    select: {
+                      topics: true,
+                    },
+                  },
+                  projectRequirement: {
+                    select: {
+                      id: true,
+                      title: true,
+                      isRequired: true,
+                    },
+                  },
+                },
+              },
+            },
+          });
+
+    const rowByCourseId = new Map(rows.map((row) => [row.courseId, row]));
+    const orderedRows = courseIds
+      .map((courseId) => rowByCourseId.get(courseId))
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     return {
-      items: rows.map((row) => {
+      items: orderedRows.map((row) => {
         const { course, ...progress } = row;
         return {
           ...progress,
@@ -911,17 +921,9 @@ export class CourseService {
     const userId = this.extractUserId(req);
     await this.ensureCourseExists(courseId);
 
-    await this.courseProgressService.evaluateCourseProgress(userId, courseId, req);
-
+    // Heal locally without blocking on Profiles HTTP (metadata sync stays on write paths).
     const [progress, latestSubmission] = await Promise.all([
-      this.prisma.userCourseProgress.findUnique({
-        where: {
-          userId_courseId: {
-            userId,
-            courseId,
-          },
-        },
-      }),
+      this.courseProgressService.evaluateCourseProgress(userId, courseId),
       this.prisma.projectSubmission.findFirst({
         where: {
           userId,

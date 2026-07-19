@@ -641,7 +641,22 @@ export class AttemptService {
     const quizzes = await this.prisma.quiz.findMany({
       where: { topicId: session.topicId },
       orderBy: { createdAt: 'asc' },
-      include: { options: true },
+      select: {
+        id: true,
+        quizCode: true,
+        question: true,
+        code: true,
+        imageUrl: true,
+        answer: true,
+        explanation: true,
+        options: {
+          select: {
+            label: true,
+            content: true,
+            isCode: true,
+          },
+        },
+      },
     });
 
     const attemptByQuizId = new Map(session.attempts.map((a) => [a.quizId, a]));
@@ -783,11 +798,13 @@ export class AttemptService {
           createdAt: 'asc',
         },
       }),
+      // Latest attempt per quiz only — avoid loading unbounded attempt history.
       this.prisma.quizAttempt.findMany({
         where: {
           userId,
           topicId,
         },
+        distinct: ['quizId'],
         select: {
           id: true,
           quizId: true,
@@ -795,9 +812,7 @@ export class AttemptService {
           isCorrect: true,
           submittedAt: true,
         },
-        orderBy: {
-          submittedAt: 'desc',
-        },
+        orderBy: [{ quizId: 'asc' }, { submittedAt: 'desc' }],
       }),
       this.prisma.quizAttempt.findMany({
         where: {

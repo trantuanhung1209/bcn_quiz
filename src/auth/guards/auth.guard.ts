@@ -27,7 +27,6 @@ export class BearerAuthGuard implements CanActivate {
 		]);
 
 		if (isPublic) {
-			this.logger.log('[guard] public route skip auth');
 			return true;
 		}
 
@@ -39,24 +38,14 @@ export class BearerAuthGuard implements CanActivate {
 		const token = bearerToken ?? cookieToken;
 		const tokenSource = bearerToken ? 'bearer' : cookieToken ? 'cookie' : 'none';
 
-		this.logger.log(
-			`[guard] authenticate ${req.method} ${req.originalUrl} tokenSource=${tokenSource}`,
-		);
-
 		try {
-			if (!token && !cookieHeader) {
-				this.logger.warn(
-					`[guard] missing credentials for ${req.method} ${req.originalUrl}`,
-				);
-			}
-
 			req.user = (await this.authService.validateToken(
 				token,
 				cookieHeader,
 				authorization,
 			)) as Express.User;
 
-			this.logger.log(
+			this.logger.debug(
 				`[guard] auth success ${req.method} ${req.originalUrl} tokenSource=${tokenSource}`,
 			);
 			return true;
