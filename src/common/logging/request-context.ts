@@ -13,6 +13,7 @@ export type RequestContextStore = {
   dbDurationMs: number;
   dbQueryCount: number;
   lastDbEndedAt: number | null;
+  authDurationMs: number | null;
   queries: DbQueryLog[];
 };
 
@@ -29,15 +30,24 @@ export const RequestContext = {
     return storage.getStore();
   },
 
-  createStore(): RequestContextStore {
+  createStore(startedAt = Date.now(), requestId = randomUUID()): RequestContextStore {
     return {
-      requestId: randomUUID(),
-      startedAt: Date.now(),
+      requestId,
+      startedAt,
       dbDurationMs: 0,
       dbQueryCount: 0,
       lastDbEndedAt: null,
+      authDurationMs: null,
       queries: [],
     };
+  },
+
+  recordAuthDuration(durationMs: number): void {
+    const store = storage.getStore();
+    if (!store) {
+      return;
+    }
+    store.authDurationMs = Math.round(durationMs);
   },
 
   recordDbQuery(durationMs: number, query: string): void {

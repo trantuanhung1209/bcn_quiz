@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
+import { RequestContext } from '../../common/logging/request-context';
 import { AuthService } from '../auth.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { extractBearerToken } from '../auth-header.util';
@@ -38,6 +39,7 @@ export class BearerAuthGuard implements CanActivate {
 		const token = bearerToken ?? cookieToken;
 		const tokenSource = bearerToken ? 'bearer' : cookieToken ? 'cookie' : 'none';
 
+		const authStartedAt = Date.now();
 		try {
 			req.user = (await this.authService.validateToken(
 				token,
@@ -45,11 +47,13 @@ export class BearerAuthGuard implements CanActivate {
 				authorization,
 			)) as Express.User;
 
+			RequestContext.recordAuthDuration(Date.now() - authStartedAt);
 			this.logger.debug(
 				`[guard] auth success ${req.method} ${req.originalUrl} tokenSource=${tokenSource}`,
 			);
 			return true;
 		} catch {
+			RequestContext.recordAuthDuration(Date.now() - authStartedAt);
 			this.logger.warn(
 				`[guard] auth failed ${req.method} ${req.originalUrl} tokenSource=${tokenSource}`,
 			);

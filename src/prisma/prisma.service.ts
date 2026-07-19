@@ -30,7 +30,9 @@ export class PrismaService
       keepAliveInitialDelayMillis: Number(
         process.env.DB_POOL_KEEPALIVE_DELAY_MS ?? 10_000,
       ),
-      idleTimeoutMillis: Number(process.env.DB_POOL_IDLE_MS ?? 60_000),
+      // Keep remote connections alive longer than default — idle reconnects were
+      // showing ~1.2s TLS handshakes in local→remote Postman tests.
+      idleTimeoutMillis: Number(process.env.DB_POOL_IDLE_MS ?? 300_000),
       connectionTimeoutMillis: Number(process.env.DB_POOL_CONNECT_TIMEOUT_MS ?? 10_000),
       allowExitOnIdle: false,
     });

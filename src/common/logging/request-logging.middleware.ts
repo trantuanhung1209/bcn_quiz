@@ -18,6 +18,10 @@ type RequestUser = {
   };
 };
 
+type TimedResponse = Response & {
+  __requestTimingPatched?: boolean;
+};
+
 @Injectable()
 export class RequestLoggingMiddleware implements NestMiddleware {
   private readonly logQueries =
@@ -30,7 +34,7 @@ export class RequestLoggingMiddleware implements NestMiddleware {
 
   use(
     request: Request & { user?: RequestUser },
-    response: Response,
+    response: TimedResponse,
     next: NextFunction,
   ): void {
     const store = RequestContext.createStore();
@@ -38,6 +42,25 @@ export class RequestLoggingMiddleware implements NestMiddleware {
     const url = request.originalUrl ?? request.url;
 
     RequestContext.run(store, () => {
+      // Correlate Postman/browser timing with server logs.
+      response.setHeader('X-Request-Id', store.requestId);
+
+      if (!response.__requestTimingPatched) {
+        response.__requestTimingPatched = true;
+        const originalWriteHead = response.writeHead.bind(response);
+        response.writeHead = ((
+          ...args: Parameters<Response['writeHead']>
+        ) => {
+          if (!response.headersSent) {
+            response.setHeader(
+              'X-Response-Time-Ms',
+              String(Date.now() - store.startedAt),
+            );
+          }
+          return originalWriteHead(...args);
+        }) as Response['writeHead'];
+      }
+
       this.logger.log('info', 'request_received', {
         request_id: store.requestId,
         action: `${method} ${url}`,
@@ -53,7 +76,8 @@ export class RequestLoggingMiddleware implements NestMiddleware {
           store.lastDbEndedAt == null
             ? null
             : Math.max(0, finishedAt - store.lastDbEndedAt);
-        const nonDbDurationMs = Math.max(0, durationMs - store.dbDurationMs);
+        // Wall-clock outside auth+db is approximate when DB queries overlap.
+        const authMs = store.authDurationMs ?? 0;
         const status = response.statusCode;
         const level = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info';
 
@@ -67,9 +91,10 @@ export class RequestLoggingMiddleware implements NestMiddleware {
           statusCode: status,
           ip: this.extractClientIp(request),
           duration_ms: durationMs,
+          auth_ms: store.authDurationMs,
           db_duration_ms: store.dbDurationMs,
           db_query_count: store.dbQueryCount,
-          non_db_duration_ms: nonDbDurationMs,
+          db_wall_ms: Math.max(0, durationMs - authMs),
           last_db_to_response_ms: lastDbToResponseMs,
           ...(this.logQueries && store.queries.length > 0
             ? { db_queries: store.queries }
