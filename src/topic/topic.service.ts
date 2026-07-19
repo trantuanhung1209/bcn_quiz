@@ -310,7 +310,7 @@ export class TopicService {
     await this.ensureCourseExists(data.courseId);
 
     if (data.imageUrl || data.imagePublicId) {
-      this.validateImageFields(data.imageUrl, data.imagePublicId);
+      await this.validateImageFields(data.imageUrl, data.imagePublicId);
     }
 
     const topic = await this.prisma.$transaction(async (tx) => {
@@ -355,7 +355,7 @@ export class TopicService {
     }
 
     if (data.imageUrl || data.imagePublicId) {
-      this.validateImageFields(data.imageUrl, data.imagePublicId);
+      await this.validateImageFields(data.imageUrl, data.imagePublicId);
     }
 
     // If a new image is provided, delete the old one from Cloudinary
@@ -410,7 +410,13 @@ export class TopicService {
       ? this.sanitizePublicId(dto.publicId)
       : undefined;
 
-    return this.cloudinaryService.createUploadSignature({ timestamp, folder, publicId });
+    return this.cloudinaryService.createUploadSignature({
+      timestamp,
+      folder,
+      publicId,
+      includeMaxBytes: true,
+      ...this.cloudinaryService.getImageOptimizationDefaults(),
+    });
   }
 
   private async ensureSlugUniqueInCourse(
@@ -469,7 +475,10 @@ export class TopicService {
     }
   }
 
-  private validateImageFields(imageUrl?: string, imagePublicId?: string): void {
+  private async validateImageFields(
+    imageUrl?: string,
+    imagePublicId?: string,
+  ): Promise<void> {
     if ((imageUrl && !imagePublicId) || (!imageUrl && imagePublicId)) {
       throw new BadRequestException('imageUrl and imagePublicId must be provided together');
     }
@@ -490,6 +499,10 @@ export class TopicService {
       if (!parsed.pathname.includes(`/${cloudName}/`)) {
         throw new BadRequestException('imageUrl does not belong to the configured Cloudinary cloud');
       }
+    }
+
+    if (imagePublicId) {
+      await this.cloudinaryService.assertImageWithinMaxBytes(imagePublicId);
     }
   }
 
