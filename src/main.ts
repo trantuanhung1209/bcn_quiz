@@ -48,6 +48,7 @@ async function bootstrap() {
       }
     },
     credentials: true,
+    exposedHeaders: ['X-Request-Id', 'X-Response-Time-Ms'],
   });
 
   app.useGlobalPipes(

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -15,6 +15,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { CourseModule } from './course/course.module';
 import { CertificateModule } from './certificate/certificate.module';
 import { RequestLoggingInterceptor } from './common/logging/request-logging.interceptor';
+import { RequestLoggingMiddleware } from './common/logging/request-logging.middleware';
 import { createWinstonLoggerOptions } from './common/logging/winston.config';
 
 @Module({
@@ -37,6 +38,7 @@ import { createWinstonLoggerOptions } from './common/logging/winston.config';
   providers: [
     AppService,
     RequestLoggingInterceptor,
+    RequestLoggingMiddleware,
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
@@ -51,4 +53,8 @@ import { createWinstonLoggerOptions } from './common/logging/winston.config';
     },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RequestLoggingMiddleware).forRoutes('*');
+  }
+}
