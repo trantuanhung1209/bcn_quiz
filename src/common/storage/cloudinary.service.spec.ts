@@ -19,15 +19,19 @@ describe('CloudinaryService image optimization signature', () => {
     const service = new CloudinaryService();
     const defaults = service.getImageOptimizationDefaults();
     expect(defaults).toEqual({ format: 'webp', quality: 'auto' });
+    expect(service.getImageMaxBytes()).toBe(3 * 1024 * 1024);
 
     const sig = service.createUploadSignature({
       timestamp: 1_700_000_000,
       folder: 'quiz-images',
+      includeMaxBytes: true,
       ...defaults,
     });
 
     expect(sig.format).toBe('webp');
     expect(sig.quality).toBe('auto');
+    expect(sig.maxBytes).toBe(3 * 1024 * 1024);
+    expect(sig.maxFileSizeMb).toBe(3);
     expect(sig.signature).toEqual(expect.any(String));
     expect(sig.signature.length).toBeGreaterThan(8);
   });

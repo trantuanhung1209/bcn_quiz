@@ -258,7 +258,7 @@ export class CourseService {
     await this.ensureCourseSlugUnique(data.slug);
 
     if (data.imageUrl || data.imagePublicId) {
-      this.validateCourseImageFields(data.imageUrl, data.imagePublicId);
+      await this.validateCourseImageFields(data.imageUrl, data.imagePublicId);
     }
 
     const hasProject = Boolean(data.hasProject);
@@ -288,7 +288,7 @@ export class CourseService {
     }
 
     if (data.imageUrl || data.imagePublicId) {
-      this.validateCourseImageFields(data.imageUrl, data.imagePublicId);
+      await this.validateCourseImageFields(data.imageUrl, data.imagePublicId);
     }
 
     // Nếu có ảnh mới khác ảnh cũ thì xoá ảnh cũ trên Cloudinary
@@ -374,6 +374,7 @@ export class CourseService {
       timestamp,
       folder,
       publicId,
+      includeMaxBytes: true,
       ...this.cloudinaryService.getImageOptimizationDefaults(),
     });
   }
@@ -1302,7 +1303,10 @@ export class CourseService {
     return [...new Set(rawTargets.map((item) => item.trim()).filter((item) => item.length > 0))];
   }
 
-  private validateCourseImageFields(imageUrl?: string, imagePublicId?: string): void {
+  private async validateCourseImageFields(
+    imageUrl?: string,
+    imagePublicId?: string,
+  ): Promise<void> {
     if ((imageUrl && !imagePublicId) || (!imageUrl && imagePublicId)) {
       throw new BadRequestException('imageUrl and imagePublicId must be provided together');
     }
@@ -1323,6 +1327,10 @@ export class CourseService {
       if (!parsed.pathname.includes(`/${cloudName}/`)) {
         throw new BadRequestException('imageUrl does not belong to the configured Cloudinary cloud');
       }
+    }
+
+    if (imagePublicId) {
+      await this.cloudinaryService.assertImageWithinMaxBytes(imagePublicId);
     }
   }
 

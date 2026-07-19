@@ -221,6 +221,8 @@ Lay signature de FE upload anh truc tiep len Cloudinary (khong qua server).
 
 Anh quiz/topic/course duoc convert thanh **WebP** luc upload (`format=webp`, `quality=auto` nam trong signature). FE phai gui lai dung 2 field nay trong form Cloudinary. File project submission **khong** bi convert.
 
+Gioi han kich thuoc anh: **toi da 3MB** (config `CLOUDINARY_IMAGE_MAX_BYTES`). Signature tra `maxBytes` / `maxFileSizeMb` de FE check `file.size` truoc khi upload; backend verify lai khi create/update (vuot → `400`, anh tren Cloudinary bi xoa).
+
 Body (optional):
 
 ```json
@@ -243,7 +245,9 @@ Response `data`:
   "resourceType": "auto",
   "uploadUrl": "https://api.cloudinary.com/v1_1/your_cloud/auto/upload",
   "format": "webp",
-  "quality": "auto"
+  "quality": "auto",
+  "maxBytes": 3145728,
+  "maxFileSizeMb": 3
 }
 ```
 
@@ -270,6 +274,9 @@ type UploadSignatureResponse = {
   format?: string;
   /** Backend mac dinh `auto` — FE BAT BUOC append neu co. */
   quality?: string;
+  /** Mac dinh 3MB — FE check file.size truoc khi upload. */
+  maxBytes?: number;
+  maxFileSizeMb?: number;
 };
 
 async function getTopicImageSignature(publicId?: string): Promise<UploadSignatureResponse> {
@@ -284,6 +291,10 @@ async function getTopicImageSignature(publicId?: string): Promise<UploadSignatur
 }
 
 async function uploadTopicImage(file: File, sig: UploadSignatureResponse, publicId?: string) {
+  if (sig.maxBytes && file.size > sig.maxBytes) {
+    throw new Error(`Image must be <= ${sig.maxFileSizeMb ?? 3}MB`);
+  }
+
   const form = new FormData();
   form.append('file', file);
   form.append('api_key', sig.apiKey);

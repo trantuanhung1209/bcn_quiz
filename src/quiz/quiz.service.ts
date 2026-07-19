@@ -327,7 +327,7 @@ export class QuizService {
       input.answer,
       optionLabels,
     );
-    this.validateImageFields(input.imageUrl, input.imagePublicId);
+    await this.validateImageFields(input.imageUrl, input.imagePublicId);
 
     const quiz = await this.prisma.quiz.create({
       data: {
@@ -413,7 +413,10 @@ export class QuizService {
         );
       }
       try {
-        this.validateImageFields(item.input.imageUrl, item.input.imagePublicId);
+        await this.validateImageFields(
+          item.input.imageUrl,
+          item.input.imagePublicId,
+        );
       } catch (error) {
         if (error instanceof BadRequestException) {
           throw new BadRequestException(
@@ -563,7 +566,7 @@ export class QuizService {
       input.answer,
       optionLabels,
     );
-    this.validateImageFields(input.imageUrl, input.imagePublicId);
+    await this.validateImageFields(input.imageUrl, input.imagePublicId);
 
     const quiz = await this.prisma.quiz.update({
       where: { id },
@@ -640,6 +643,7 @@ export class QuizService {
       timestamp,
       folder,
       publicId,
+      includeMaxBytes: true,
       ...this.cloudinaryService.getImageOptimizationDefaults(),
     });
   }
@@ -690,10 +694,10 @@ export class QuizService {
     return fallback;
   }
 
-  private validateImageFields(
+  private async validateImageFields(
     imageUrl?: string | null,
     imagePublicId?: string | null,
-  ): void {
+  ): Promise<void> {
     if ((imageUrl && !imagePublicId) || (!imageUrl && imagePublicId)) {
       throw new BadRequestException(
         'imageUrl and imagePublicId must be provided together',
@@ -723,6 +727,10 @@ export class QuizService {
           'imageUrl does not belong to the configured Cloudinary cloud',
         );
       }
+    }
+
+    if (imagePublicId) {
+      await this.cloudinaryService.assertImageWithinMaxBytes(imagePublicId);
     }
   }
 
