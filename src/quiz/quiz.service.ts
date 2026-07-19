@@ -640,6 +640,7 @@ export class QuizService {
       timestamp,
       folder,
       publicId,
+      ...this.cloudinaryService.getImageOptimizationDefaults(),
     });
   }
 

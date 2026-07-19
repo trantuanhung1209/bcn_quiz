@@ -219,6 +219,8 @@ Luu y:
 
 Lay signature de FE upload anh truc tiep len Cloudinary (khong qua server).
 
+Anh quiz/topic/course duoc convert thanh **WebP** luc upload (`format=webp`, `quality=auto` nam trong signature). FE phai gui lai dung 2 field nay trong form Cloudinary. File project submission **khong** bi convert.
+
 Body (optional):
 
 ```json
@@ -239,7 +241,9 @@ Response `data`:
   "apiKey": "your_api_key",
   "cloudName": "your_cloud",
   "resourceType": "auto",
-  "uploadUrl": "https://api.cloudinary.com/v1_1/your_cloud/auto/upload"
+  "uploadUrl": "https://api.cloudinary.com/v1_1/your_cloud/auto/upload",
+  "format": "webp",
+  "quality": "auto"
 }
 ```
 
@@ -262,6 +266,10 @@ type UploadSignatureResponse = {
   cloudName: string;
   resourceType: 'auto';
   uploadUrl: string;
+  /** Backend mac dinh `webp` — FE BAT BUOC append cung field nay neu co. */
+  format?: string;
+  /** Backend mac dinh `auto` — FE BAT BUOC append neu co. */
+  quality?: string;
 };
 
 async function getTopicImageSignature(publicId?: string): Promise<UploadSignatureResponse> {
@@ -283,6 +291,9 @@ async function uploadTopicImage(file: File, sig: UploadSignatureResponse, public
   form.append('signature', sig.signature);
   form.append('folder', sig.folder);
   form.append('resource_type', sig.resourceType);
+  // Convert/store as WebP (signed). Bo 2 dong nay → Cloudinary reject signature.
+  if (sig.format) form.append('format', sig.format);
+  if (sig.quality) form.append('quality', sig.quality);
   if (publicId) form.append('public_id', publicId);
 
   const res = await fetch(sig.uploadUrl, { method: 'POST', body: form });
@@ -501,7 +512,7 @@ Body giong create — `quizCode` optional; `answer` van phai la label hop le:
 
 `POST /quiz/upload/signature`
 
-Lay signature de FE upload anh cau hoi truc tiep len Cloudinary (khong qua server) — giong het flow cua topic (Section 3.8), chi khac folder mac dinh la `quiz-images`.
+Lay signature de FE upload anh cau hoi truc tiep len Cloudinary (khong qua server) — giong het flow cua topic (Section 3.8), chi khac folder mac dinh la `quiz-images`. Response co them `format`/`quality` (mac dinh webp/auto) — FE phai append khi upload.
 
 Body (optional):
 

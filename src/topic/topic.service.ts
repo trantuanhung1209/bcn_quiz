@@ -410,7 +410,12 @@ export class TopicService {
       ? this.sanitizePublicId(dto.publicId)
       : undefined;
 
-    return this.cloudinaryService.createUploadSignature({ timestamp, folder, publicId });
+    return this.cloudinaryService.createUploadSignature({
+      timestamp,
+      folder,
+      publicId,
+      ...this.cloudinaryService.getImageOptimizationDefaults(),
+    });
   }
 
   private async ensureSlugUniqueInCourse(

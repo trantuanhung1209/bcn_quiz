@@ -370,7 +370,12 @@ export class CourseService {
       ? this.sanitizeCoursePublicId(dto.publicId)
       : undefined;
 
-    return this.cloudinaryService.createUploadSignature({ timestamp, folder, publicId });
+    return this.cloudinaryService.createUploadSignature({
+      timestamp,
+      folder,
+      publicId,
+      ...this.cloudinaryService.getImageOptimizationDefaults(),
+    });
   }
 
   async updateCourseTopics(courseId: string, data: UpdateCourseTopicsDto) {

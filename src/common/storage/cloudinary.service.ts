@@ -16,6 +16,20 @@ export type UploadedCloudinaryFile = {
   format: string;
 };
 
+export type CloudinaryUploadSignature = {
+  signature: string;
+  timestamp: number;
+  folder: string;
+  apiKey: string;
+  cloudName: string;
+  resourceType: 'auto';
+  uploadUrl: string;
+  /** Present when upload must convert/store as this format (e.g. webp). FE must send the same field. */
+  format?: string;
+  /** Optional Cloudinary quality hint (e.g. auto). FE must send when present. */
+  quality?: string;
+};
+
 @Injectable()
 export class CloudinaryService {
   private readonly logger = new Logger(CloudinaryService.name);
@@ -53,11 +67,31 @@ export class CloudinaryService {
     };
   }
 
+  /**
+   * Default image optimization for quiz/topic/course covers.
+   * Empty CLOUDINARY_IMAGE_FORMAT disables conversion.
+   */
+  getImageOptimizationDefaults(): { format?: string; quality?: string } {
+    const format = (process.env.CLOUDINARY_IMAGE_FORMAT ?? 'webp')
+      .trim()
+      .toLowerCase();
+    const quality = (process.env.CLOUDINARY_IMAGE_QUALITY ?? 'auto')
+      .trim()
+      .toLowerCase();
+
+    return {
+      ...(format ? { format } : {}),
+      ...(quality ? { quality } : {}),
+    };
+  }
+
   createUploadSignature(params: {
     timestamp: number;
     folder: string;
     publicId?: string;
-  }) {
+    format?: string;
+    quality?: string;
+  }): CloudinaryUploadSignature {
     const signingParams: Record<string, string | number> = {
       timestamp: params.timestamp,
       folder: params.folder,
@@ -65,6 +99,16 @@ export class CloudinaryService {
 
     if (params.publicId) {
       signingParams.public_id = params.publicId;
+    }
+
+    const format = params.format?.trim().toLowerCase();
+    if (format) {
+      signingParams.format = format;
+    }
+
+    const quality = params.quality?.trim();
+    if (quality) {
+      signingParams.quality = quality;
     }
 
     const signature = cloudinary.utils.api_sign_request(
@@ -80,6 +124,8 @@ export class CloudinaryService {
       cloudName: this.cloudName,
       resourceType: 'auto' as const,
       uploadUrl: `https://api.cloudinary.com/v1_1/${this.cloudName}/auto/upload`,
+      ...(format ? { format } : {}),
+      ...(quality ? { quality } : {}),
     };
   }
 
