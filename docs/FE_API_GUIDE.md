@@ -845,7 +845,7 @@ Rule hoan thanh course:
 **Curriculum reopen (Option B) — quan trong cho FE:**
 - Khi admin **them/doi topic** cua course, hoac **bat `hasProject`**, backend **re-evaluate ngay** tat ca user da co progress tren course do.
 - Khi admin **them quiz** vao 1 topic, backend **mo lai** `TopicProgress.isCompleted` cua topic do, roi re-evaluate course lien quan.
-- **Doc path cung tu heal:** `GET /course/progress/me` va `GET /course/:id/progress/me` luon tinh lai theo curriculum hien tai. Neu topic da complete nhung sau do co quiz moi (`quiz.createdAt > topicProgress.completedAt`), topic bi mo lai va % course giam — **khong can user nop bai moi**.
+- **Doc path cung tu heal:** `GET /course/progress/me` va `GET /course/:id/progress/me` tinh lai theo curriculum hien tai (heal stale topic completion). `GET /course/progress/me` chi recompute **page hien tai** (khong con eval tat ca course + khong goi Profiles HTTP tren GET). Admin doi curriculum van fan-out reevaluate o write path. Neu topic da complete nhung sau do co quiz moi (`quiz.createdAt > topicProgress.completedAt`), topic bi mo lai va % course giam — **khong can user nop bai moi**.
 - Topic moi chua lam **khong** duoc tinh la complete → % = `so topic completed / tong topic` (va + project neu co).
 - User dang `COMPLETED` + 100% co the bi **demote** ve `IN_PROGRESS` (hoac `PROJECT_PENDING_APPROVAL`) va % giam theo curriculum moi.
 - **Chung chi khong bi xoa** (1 user / 1 course). Khi hoan thanh lai, cung 1 certificate duoc **refresh `issuedAt`** — khong tao chung chi moi, khong spam timeline `COURSE_COMPLETE` lan 2.
@@ -1097,7 +1097,7 @@ async function handleProjectUpload(courseId: string, file: File) {
 | `DELETE` | `/course/:id` | Xoa course |
 | `PUT` | `/course/:id/topics` | Cap nhat danh sach topic |
 | `PUT` | `/course/:id/project-requirement` | Upsert de bai project |
-| `GET` | `/course/:id/project-submission?status=...` | Xem tat ca submission |
+| `GET` | `/course/:id/project-submission?status=...&page=1&limit=100` | List submission (array; mac dinh max 100/page) |
 | `PATCH` | `/course/:id/project-submission/:submissionId/review` | Duyet bai nop |
 
 Luu y `PUT /course/:id/project-requirement`:

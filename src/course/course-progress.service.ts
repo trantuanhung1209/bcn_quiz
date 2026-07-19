@@ -1,9 +1,22 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { CourseProgressStatus, ProjectSubmissionStatus } from '@prisma/client';
+import {
+  CourseProgressStatus,
+  ProjectSubmissionStatus,
+  type UserCourseProgress,
+} from '@prisma/client';
 import type { Request as ExpressRequest } from 'express';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProfilesService } from '../profiles/profiles.service';
+
+type CourseForProgressEval = {
+  id: string;
+  name: string;
+  slug: string;
+  hasProject: boolean;
+  topics: Array<{ topicId: string }>;
+  projectRequirement: { id: string; isRequired: boolean } | null;
+};
 
 @Injectable()
 export class CourseProgressService {
@@ -98,7 +111,7 @@ export class CourseProgressService {
     userId: string,
     courseId: string,
     req?: ExpressRequest,
-  ): Promise<void> {
+  ): Promise<UserCourseProgress | null> {
     const [course, existing] = await Promise.all([
       this.prisma.course.findUnique({
         where: { id: courseId },
@@ -127,15 +140,163 @@ export class CourseProgressService {
     ]);
 
     if (!course) {
-      return;
+      return null;
     }
 
     const topicIds = course.topics.map((item) => item.topicId);
-    const totalTopics = topicIds.length;
 
     // Self-heal on read: quizzes added after topic completion must reopen that topic
     // even if the admin create-path fan-out was missed / not deployed yet.
     await this.healStaleTopicCompletions(userId, topicIds);
+
+    const progress = await this.computeAndUpsertCourseProgress(
+      userId,
+      course,
+      existing,
+    );
+
+    await this.maybeIssueCertificateAndSyncProfiles(
+      userId,
+      course,
+      existing,
+      progress,
+      req,
+    );
+
+    this.logger.debug(
+      `[evaluateCourseProgress] userId=${userId} courseId=${courseId} status=${progress.status} progress=${progress.progressPercent}`,
+    );
+
+    return progress;
+  }
+
+  /**
+   * Batch heal + recompute for a page of courses.
+   * Shared topic-heal / reads — no Profiles HTTP (GET path).
+   */
+  async evaluateCourseProgressBatch(
+    userId: string,
+    courseIds: string[],
+  ): Promise<void> {
+    const uniqueCourseIds = [...new Set(courseIds.filter(Boolean))];
+    if (uniqueCourseIds.length === 0) {
+      return;
+    }
+
+    const [courses, existingRows] = await Promise.all([
+      this.prisma.course.findMany({
+        where: { id: { in: uniqueCourseIds } },
+        include: {
+          topics: {
+            select: { topicId: true },
+          },
+          projectRequirement: {
+            select: {
+              id: true,
+              isRequired: true,
+            },
+          },
+        },
+      }),
+      this.prisma.userCourseProgress.findMany({
+        where: {
+          userId,
+          courseId: { in: uniqueCourseIds },
+        },
+      }),
+    ]);
+
+    const allTopicIds = [
+      ...new Set(courses.flatMap((course) => course.topics.map((t) => t.topicId))),
+    ];
+
+    await this.healStaleTopicCompletions(userId, allTopicIds);
+
+    const projectCourseIds = courses
+      .filter((course) => course.hasProject)
+      .map((course) => course.id);
+
+    const [topicProgresses, approvedProjects] = await Promise.all([
+      allTopicIds.length
+        ? this.prisma.topicProgress.findMany({
+            where: {
+              userId,
+              topicId: { in: allTopicIds },
+            },
+            select: {
+              topicId: true,
+              isCompleted: true,
+            },
+          })
+        : Promise.resolve(
+            [] as Array<{ topicId: string; isCompleted: boolean }>,
+          ),
+      projectCourseIds.length
+        ? this.prisma.projectSubmission.findMany({
+            where: {
+              userId,
+              courseId: { in: projectCourseIds },
+              status: ProjectSubmissionStatus.APPROVED,
+            },
+            orderBy: {
+              reviewedAt: 'desc',
+            },
+            select: {
+              courseId: true,
+              reviewedAt: true,
+            },
+          })
+        : Promise.resolve(
+            [] as Array<{ courseId: string; reviewedAt: Date | null }>,
+          ),
+    ]);
+
+    const completedTopicIds = new Set(
+      topicProgresses.filter((row) => row.isCompleted).map((row) => row.topicId),
+    );
+
+    const approvedByCourseId = new Map<string, Date | null>();
+    for (const row of approvedProjects) {
+      if (!approvedByCourseId.has(row.courseId)) {
+        approvedByCourseId.set(row.courseId, row.reviewedAt);
+      }
+    }
+
+    const existingByCourseId = new Map(
+      existingRows.map((row) => [row.courseId, row]),
+    );
+
+    await Promise.all(
+      courses.map((course) => {
+        const topicIds = course.topics.map((item) => item.topicId);
+        const completedTopicCount = topicIds.filter((topicId) =>
+          completedTopicIds.has(topicId),
+        ).length;
+        const approvedReviewedAt = approvedByCourseId.get(course.id);
+
+        return this.upsertComputedCourseProgress(
+          userId,
+          course,
+          existingByCourseId.get(course.id) ?? null,
+          {
+            totalTopics: topicIds.length,
+            completedTopicCount,
+            approvedReviewedAt:
+              approvedReviewedAt === undefined ? null : approvedReviewedAt,
+            hasApprovedProject: approvedByCourseId.has(course.id),
+          },
+        );
+      }),
+    );
+  }
+
+  private async computeAndUpsertCourseProgress(
+    userId: string,
+    course: CourseForProgressEval,
+    existing: UserCourseProgress | null,
+  ): Promise<UserCourseProgress> {
+    const topicIds = course.topics.map((item) => item.topicId);
+    const totalTopics = topicIds.length;
 
     const topicProgresses = totalTopics
       ? await this.prisma.topicProgress.findMany({
@@ -148,47 +309,65 @@ export class CourseProgressService {
           select: {
             topicId: true,
             isCompleted: true,
-            accuracy: true,
           },
         })
       : [];
 
-    // Use sticky isCompleted only. Accuracy is NOT enough after curriculum reopen
-    // (new quizzes clear isCompleted while historical accuracy may still be high).
     const completedTopicCount = topicProgresses.filter(
       (item) => item.isCompleted,
     ).length;
 
-    const topicMilestoneCompleted =
-      totalTopics > 0 && completedTopicCount === totalTopics;
-
     const requiresProjectApproval = course.hasProject;
-    const hasProjectRequirement =
-      requiresProjectApproval && Boolean(course.projectRequirement?.isRequired);
-
     const approvedProject = requiresProjectApproval
       ? await this.prisma.projectSubmission.findFirst({
           where: {
             userId,
-            courseId,
+            courseId: course.id,
             status: ProjectSubmissionStatus.APPROVED,
           },
           orderBy: {
             reviewedAt: 'desc',
           },
           select: {
-            id: true,
             reviewedAt: true,
           },
         })
       : null;
 
+    return this.upsertComputedCourseProgress(userId, course, existing, {
+      totalTopics,
+      completedTopicCount,
+      approvedReviewedAt: approvedProject?.reviewedAt ?? null,
+      hasApprovedProject: Boolean(approvedProject),
+    });
+  }
+
+  private async upsertComputedCourseProgress(
+    userId: string,
+    course: CourseForProgressEval,
+    existing: UserCourseProgress | null,
+    stats: {
+      totalTopics: number;
+      completedTopicCount: number;
+      approvedReviewedAt: Date | null;
+      hasApprovedProject: boolean;
+    },
+  ): Promise<UserCourseProgress> {
+    const { totalTopics, completedTopicCount, approvedReviewedAt, hasApprovedProject } =
+      stats;
+
+    // Use sticky isCompleted only. Accuracy is NOT enough after curriculum reopen
+    // (new quizzes clear isCompleted while historical accuracy may still be high).
+    const topicMilestoneCompleted =
+      totalTopics > 0 && completedTopicCount === totalTopics;
+
+    const requiresProjectApproval = course.hasProject;
     const topicWeight = requiresProjectApproval ? 50 : 100;
     const topicProgressPercent =
       totalTopics > 0
         ? Math.round((completedTopicCount / totalTopics) * topicWeight)
         : 0;
-    const projectProgressPercent = approvedProject ? 50 : 0;
+    const projectProgressPercent = hasApprovedProject ? 50 : 0;
 
     let progressPercent = Math.min(
       100,
@@ -200,7 +379,7 @@ export class CourseProgressService {
     if (
       topicMilestoneCompleted &&
       requiresProjectApproval &&
-      !approvedProject
+      !hasApprovedProject
     ) {
       status = CourseProgressStatus.PROJECT_PENDING_APPROVAL;
       progressPercent = 50;
@@ -211,7 +390,11 @@ export class CourseProgressService {
       progressPercent = 100;
     }
 
-    if (topicMilestoneCompleted && requiresProjectApproval && approvedProject) {
+    if (
+      topicMilestoneCompleted &&
+      requiresProjectApproval &&
+      hasApprovedProject
+    ) {
       status = CourseProgressStatus.COMPLETED;
       progressPercent = 100;
     }
@@ -222,7 +405,7 @@ export class CourseProgressService {
       where: {
         userId_courseId: {
           userId,
-          courseId,
+          courseId: course.id,
         },
       },
       update: {
@@ -234,8 +417,8 @@ export class CourseProgressService {
           ? (existing?.topicsCompletedAt ?? now)
           : null,
         projectApprovedAt:
-          status === CourseProgressStatus.COMPLETED && approvedProject
-            ? (approvedProject.reviewedAt ?? now)
+          status === CourseProgressStatus.COMPLETED && hasApprovedProject
+            ? (approvedReviewedAt ?? now)
             : (existing?.projectApprovedAt ?? null),
         completedAt:
           status === CourseProgressStatus.COMPLETED
@@ -244,14 +427,14 @@ export class CourseProgressService {
       },
       create: {
         userId,
-        courseId,
+        courseId: course.id,
         topicProgressPercent,
         projectProgressPercent,
         progressPercent,
         status,
         topicsCompletedAt: topicMilestoneCompleted ? now : null,
-        projectApprovedAt: approvedProject
-          ? (approvedProject.reviewedAt ?? now)
+        projectApprovedAt: hasApprovedProject
+          ? (approvedReviewedAt ?? now)
           : null,
         completedAt: status === CourseProgressStatus.COMPLETED ? now : null,
       },
@@ -262,19 +445,31 @@ export class CourseProgressService {
       status !== CourseProgressStatus.COMPLETED
     ) {
       this.logger.log(
-        `[evaluateCourseProgress] reopen demote userId=${userId} courseId=${courseId} ${existing.status} -> ${status} progress=${progressPercent}`,
+        `[evaluateCourseProgress] reopen demote userId=${userId} courseId=${course.id} ${existing.status} -> ${status} progress=${progressPercent}`,
       );
     }
 
+    return progress;
+  }
+
+  private async maybeIssueCertificateAndSyncProfiles(
+    userId: string,
+    course: CourseForProgressEval,
+    existing: UserCourseProgress | null,
+    progress: UserCourseProgress,
+    req?: ExpressRequest,
+  ): Promise<void> {
+    const now = progress.updatedAt ?? new Date();
+
     if (
-      status === CourseProgressStatus.COMPLETED &&
+      progress.status === CourseProgressStatus.COMPLETED &&
       existing?.status !== CourseProgressStatus.COMPLETED
     ) {
       const existingCertificate = await this.prisma.certificate.findUnique({
         where: {
           userId_courseId: {
             userId,
-            courseId,
+            courseId: course.id,
           },
         },
         select: { id: true },
@@ -284,25 +479,25 @@ export class CourseProgressService {
         where: {
           userId_courseId: {
             userId,
-            courseId,
+            courseId: course.id,
           },
         },
         update: {
           issuedAt: now,
           metadata: {
-            topicProgressPercent,
-            projectProgressPercent,
+            topicProgressPercent: progress.topicProgressPercent,
+            projectProgressPercent: progress.projectProgressPercent,
             refreshed: true,
           },
         },
         create: {
           userId,
-          courseId,
+          courseId: course.id,
           certificateCode: `CRT-${randomUUID()}`,
           issuedAt: now,
           metadata: {
-            topicProgressPercent,
-            projectProgressPercent,
+            topicProgressPercent: progress.topicProgressPercent,
+            projectProgressPercent: progress.projectProgressPercent,
           },
         },
       });
@@ -313,7 +508,7 @@ export class CourseProgressService {
           eventType: 'COURSE_COMPLETE',
           title: `Hoàn thành khóa học ${course.name}`,
           metadata: {
-            courseId: courseId,
+            courseId: course.id,
             courseSlug: course.slug,
             score: progress.progressPercent,
           },
@@ -336,29 +531,28 @@ export class CourseProgressService {
         },
       });
 
-      await this.profilesService.patchMyMetadata(req, {
-        courseProgress: {
-          courseId,
-          progressPercent: progress.progressPercent,
-          topicProgressPercent: progress.topicProgressPercent,
-          projectProgressPercent: progress.projectProgressPercent,
-          status: progress.status,
-          updatedAt: progress.updatedAt,
-        },
-        certificates: certificates.map((item) => ({
-          id: item.id,
-          courseId: item.courseId,
-          courseSlug: item.course.slug,
-          courseName: item.course.name,
-          certificateCode: item.certificateCode,
-          issuedAt: item.issuedAt,
-        })),
-      });
+      // Fire-and-forget: Profiles metadata must not block the API response.
+      void this.profilesService
+        .patchMyMetadata(req, {
+          courseProgress: {
+            courseId: course.id,
+            progressPercent: progress.progressPercent,
+            topicProgressPercent: progress.topicProgressPercent,
+            projectProgressPercent: progress.projectProgressPercent,
+            status: progress.status,
+            updatedAt: progress.updatedAt,
+          },
+          certificates: certificates.map((item) => ({
+            id: item.id,
+            courseId: item.courseId,
+            courseSlug: item.course.slug,
+            courseName: item.course.name,
+            certificateCode: item.certificateCode,
+            issuedAt: item.issuedAt,
+          })),
+        })
+        .catch(() => undefined);
     }
-
-    this.logger.log(
-      `[evaluateCourseProgress] userId=${userId} courseId=${courseId} status=${status} progress=${progressPercent}`,
-    );
   }
 
   /**
