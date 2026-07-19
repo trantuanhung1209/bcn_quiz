@@ -222,6 +222,7 @@ export class QuizService {
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
 
+    // Public list does not return topic/answer/explanation — skip those joins/columns.
     const [quizzes, total] = await Promise.all([
       this.prisma.quiz.findMany({
         skip,
@@ -229,9 +230,20 @@ export class QuizService {
         orderBy: {
           createdAt: 'desc',
         },
-        include: {
-          topic: true,
-          options: true,
+        select: {
+          id: true,
+          quizCode: true,
+          question: true,
+          code: true,
+          imageUrl: true,
+          imagePublicId: true,
+          options: {
+            select: {
+              label: true,
+              content: true,
+              isCode: true,
+            },
+          },
         },
       }),
       this.prisma.quiz.count(),

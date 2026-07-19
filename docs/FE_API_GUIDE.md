@@ -845,7 +845,7 @@ Rule hoan thanh course:
 **Curriculum reopen (Option B) — quan trong cho FE:**
 - Khi admin **them/doi topic** cua course, hoac **bat `hasProject`**, backend **re-evaluate ngay** tat ca user da co progress tren course do.
 - Khi admin **them quiz** vao 1 topic, backend **mo lai** `TopicProgress.isCompleted` cua topic do, roi re-evaluate course lien quan.
-- **Doc path cung tu heal:** `GET /course/progress/me` va `GET /course/:id/progress/me` tinh lai theo curriculum hien tai (heal stale topic completion). `GET /course/progress/me` chi recompute **page hien tai** (khong con eval tat ca course + khong goi Profiles HTTP tren GET). Admin doi curriculum van fan-out reevaluate o write path. Neu topic da complete nhung sau do co quiz moi (`quiz.createdAt > topicProgress.completedAt`), topic bi mo lai va % course giam — **khong can user nop bai moi**.
+- **Doc path heal:** `GET /course/:id/progress/me` van heal/recompute 1 course. `GET /course/progress/me` **mac dinh chi doc progress da luu** (nhanh); them `?revalidate=true` neu FE muon heal page hien tai. Admin doi curriculum van fan-out reevaluate o write path. Neu topic da complete nhung sau do co quiz moi (`quiz.createdAt > topicProgress.completedAt`), topic bi mo lai va % course giam khi revalidate/detail/write-path chay.
 - Topic moi chua lam **khong** duoc tinh la complete → % = `so topic completed / tong topic` (va + project neu co).
 - User dang `COMPLETED` + 100% co the bi **demote** ve `IN_PROGRESS` (hoac `PROJECT_PENDING_APPROVAL`) va % giam theo curriculum moi.
 - **Chung chi khong bi xoa** (1 user / 1 course). Khi hoan thanh lai, cung 1 certificate duoc **refresh `issuedAt`** — khong tao chung chi moi, khong spam timeline `COURSE_COMPLETE` lan 2.
@@ -881,6 +881,7 @@ Query:
 | `limit` | Khong | Mac dinh `10`, max `100` |
 | `scope` | Khong | `active` = dang lam (chua COMPLETED); `completed` = da hoan thanh |
 | `status` | Khong | Loc dung 1 status: `IN_PROGRESS` \| `TOPICS_COMPLETED` \| `PROJECT_PENDING_APPROVAL` \| `COMPLETED`. Neu co `status` thi bo qua `scope`. |
+| `revalidate` | Khong | `true`/`1` = heal/recompute page truoc khi tra. Mac dinh **tat** de list nhanh. |
 
 Vi du tab FE:
 - Dang hoc: `GET /course/progress/me?scope=active`
