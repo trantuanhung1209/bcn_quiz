@@ -65,51 +65,91 @@ export class CourseService {
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
 
-    const [items, total] = await Promise.all([
-      this.prisma.course.findMany({
-        skip,
-        take: limit,
-        orderBy: {
-          createdAt: 'desc',
-        },
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          description: true,
-          imageUrl: true,
-          imagePublicId: true,
-          hasProject: true,
-          topicWeight: true,
-          projectWeight: true,
-          createdAt: true,
-          updatedAt: true,
-          _count: {
-            select: {
-              topics: true,
-              submissions: true,
-              certificates: true,
-            },
-          },
-          projectRequirement: {
-            select: {
-              id: true,
-              title: true,
-              description: true,
-              isRequired: true,
-              createdAt: true,
-              updatedAt: true,
-            },
-          },
-        },
-      }),
-      this.prisma.course.count(),
-    ]);
+    type CourseListRow = {
+      id: string;
+      name: string;
+      slug: string;
+      description: string | null;
+      imageUrl: string | null;
+      imagePublicId: string | null;
+      hasProject: boolean;
+      topicWeight: number;
+      projectWeight: number;
+      createdAt: Date;
+      updatedAt: Date;
+      topic_count: number;
+      submission_count: number;
+      certificate_count: number;
+      req_id: string | null;
+      req_title: string | null;
+      req_description: string | null;
+      req_is_required: boolean | null;
+      req_created_at: Date | null;
+      req_updated_at: Date | null;
+      total_count: number;
+    };
 
+    const rows = await this.prisma.$queryRaw<CourseListRow[]>`
+      SELECT
+        c.id,
+        c.name,
+        c.slug,
+        c.description,
+        c."imageUrl",
+        c."imagePublicId",
+        c."hasProject",
+        c."topicWeight",
+        c."projectWeight",
+        c."createdAt",
+        c."updatedAt",
+        (SELECT COUNT(*)::int FROM course_topics ct WHERE ct."courseId" = c.id) AS topic_count,
+        (SELECT COUNT(*)::int FROM project_submissions ps WHERE ps."courseId" = c.id) AS submission_count,
+        (SELECT COUNT(*)::int FROM certificates cert WHERE cert."courseId" = c.id) AS certificate_count,
+        pr.id AS req_id,
+        pr.title AS req_title,
+        pr.description AS req_description,
+        pr."isRequired" AS req_is_required,
+        pr."createdAt" AS req_created_at,
+        pr."updatedAt" AS req_updated_at,
+        COUNT(*) OVER()::int AS total_count
+      FROM courses c
+      LEFT JOIN course_project_requirements pr ON pr."courseId" = c.id
+      ORDER BY c."createdAt" DESC
+      LIMIT ${limit} OFFSET ${skip}
+    `;
+
+    const total = rows[0]?.total_count ?? 0;
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     return {
-      items,
+      items: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        slug: row.slug,
+        description: row.description,
+        imageUrl: row.imageUrl,
+        imagePublicId: row.imagePublicId,
+        hasProject: row.hasProject,
+        topicWeight: row.topicWeight,
+        projectWeight: row.projectWeight,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        _count: {
+          topics: row.topic_count,
+          submissions: row.submission_count,
+          certificates: row.certificate_count,
+        },
+        projectRequirement: row.req_id
+          ? {
+              id: row.req_id,
+              title: row.req_title,
+              description: row.req_description,
+              isRequired: row.req_is_required,
+              createdAt: row.req_created_at,
+              updatedAt: row.req_updated_at,
+            }
+          : null,
+      })),
       pagination: {
         page,
         limit,
@@ -845,33 +885,6 @@ export class CourseService {
       ...this.buildMyCourseProgressStatusFilter(query),
     };
 
-    const courseInclude = {
-      course: {
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          description: true,
-          imageUrl: true,
-          hasProject: true,
-          topicWeight: true,
-          projectWeight: true,
-          _count: {
-            select: {
-              topics: true,
-            },
-          },
-          projectRequirement: {
-            select: {
-              id: true,
-              title: true,
-              isRequired: true,
-            },
-          },
-        },
-      },
-    } as const;
-
     // Default: read stored progress only (fast). Optional ?revalidate=true heals the page.
     // Admin curriculum writes already fan-out reevaluation on the write path.
     if (query.revalidate) {
@@ -889,38 +902,123 @@ export class CourseService {
       );
     }
 
-    const [rows, total] = await Promise.all([
-      this.prisma.userCourseProgress.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
-        include: courseInclude,
-      }),
-      this.prisma.userCourseProgress.count({ where }),
-    ]);
+    type ProgressListRow = {
+      id: string;
+      userId: string;
+      courseId: string;
+      topicProgressPercent: number;
+      projectProgressPercent: number;
+      progressPercent: number;
+      status: CourseProgressStatus;
+      topicsCompletedAt: Date | null;
+      projectApprovedAt: Date | null;
+      completedAt: Date | null;
+      createdAt: Date;
+      updatedAt: Date;
+      course_id: string;
+      course_name: string;
+      course_slug: string;
+      course_description: string | null;
+      course_image_url: string | null;
+      course_has_project: boolean;
+      course_topic_weight: number;
+      course_project_weight: number;
+      topic_count: number;
+      req_id: string | null;
+      req_title: string | null;
+      req_is_required: boolean | null;
+      total_count: number;
+    };
 
+    const scopeStatuses =
+      query.status
+        ? [query.status]
+        : query.scope === MyCourseProgressScope.COMPLETED
+          ? [CourseProgressStatus.COMPLETED]
+          : query.scope === MyCourseProgressScope.ACTIVE
+            ? [
+                CourseProgressStatus.IN_PROGRESS,
+                CourseProgressStatus.TOPICS_COMPLETED,
+                CourseProgressStatus.PROJECT_PENDING_APPROVAL,
+              ]
+            : null;
+
+    const statusClause = scopeStatuses
+      ? Prisma.sql`AND p.status::text IN (${Prisma.join(scopeStatuses)})`
+      : Prisma.empty;
+
+    const rows = await this.prisma.$queryRaw<ProgressListRow[]>`
+      SELECT
+        p.id,
+        p."userId",
+        p."courseId",
+        p."topicProgressPercent",
+        p."projectProgressPercent",
+        p."progressPercent",
+        p.status,
+        p."topicsCompletedAt",
+        p."projectApprovedAt",
+        p."completedAt",
+        p."createdAt",
+        p."updatedAt",
+        c.id AS course_id,
+        c.name AS course_name,
+        c.slug AS course_slug,
+        c.description AS course_description,
+        c."imageUrl" AS course_image_url,
+        c."hasProject" AS course_has_project,
+        c."topicWeight" AS course_topic_weight,
+        c."projectWeight" AS course_project_weight,
+        (SELECT COUNT(*)::int FROM course_topics ct WHERE ct."courseId" = c.id) AS topic_count,
+        pr.id AS req_id,
+        pr.title AS req_title,
+        pr."isRequired" AS req_is_required,
+        COUNT(*) OVER()::int AS total_count
+      FROM user_course_progresses p
+      INNER JOIN courses c ON c.id = p."courseId"
+      LEFT JOIN course_project_requirements pr ON pr."courseId" = c.id
+      WHERE p."userId" = ${userId}
+      ${statusClause}
+      ORDER BY p."updatedAt" DESC, p."createdAt" DESC
+      LIMIT ${limit} OFFSET ${skip}
+    `;
+
+    const total = rows[0]?.total_count ?? 0;
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     return {
-      items: rows.map((row) => {
-        const { course, ...progress } = row;
-        return {
-          ...progress,
-          course: {
-            id: course.id,
-            name: course.name,
-            slug: course.slug,
-            description: course.description,
-            imageUrl: course.imageUrl,
-            hasProject: course.hasProject,
-            topicWeight: course.topicWeight,
-            projectWeight: course.projectWeight,
-            topicCount: course._count.topics,
-            projectRequirement: course.projectRequirement,
-          },
-        };
-      }),
+      items: rows.map((row) => ({
+        id: row.id,
+        userId: row.userId,
+        courseId: row.courseId,
+        topicProgressPercent: row.topicProgressPercent,
+        projectProgressPercent: row.projectProgressPercent,
+        progressPercent: row.progressPercent,
+        status: row.status,
+        topicsCompletedAt: row.topicsCompletedAt,
+        projectApprovedAt: row.projectApprovedAt,
+        completedAt: row.completedAt,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        course: {
+          id: row.course_id,
+          name: row.course_name,
+          slug: row.course_slug,
+          description: row.course_description,
+          imageUrl: row.course_image_url,
+          hasProject: row.course_has_project,
+          topicWeight: row.course_topic_weight,
+          projectWeight: row.course_project_weight,
+          topicCount: row.topic_count,
+          projectRequirement: row.req_id
+            ? {
+                id: row.req_id,
+                title: row.req_title,
+                isRequired: row.req_is_required,
+              }
+            : null,
+        },
+      })),
       pagination: {
         page,
         limit,

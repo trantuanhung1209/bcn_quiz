@@ -222,37 +222,59 @@ export class QuizService {
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
 
-    // Public list does not return topic/answer/explanation — skip those joins/columns.
-    const [quizzes, total] = await Promise.all([
-      this.prisma.quiz.findMany({
-        skip,
-        take: limit,
-        orderBy: {
-          createdAt: 'desc',
-        },
-        select: {
-          id: true,
-          quizCode: true,
-          question: true,
-          code: true,
-          imageUrl: true,
-          imagePublicId: true,
-          options: {
-            select: {
-              label: true,
-              content: true,
-              isCode: true,
-            },
-          },
-        },
-      }),
-      this.prisma.quiz.count(),
-    ]);
+    // One DB round-trip: page rows + options JSON + total via window count.
+    type QuizListRow = {
+      id: string;
+      quizCode: string;
+      question: string;
+      code: string | null;
+      imageUrl: string | null;
+      imagePublicId: string | null;
+      options: Array<{ label: string; content: string; isCode: boolean }> | null;
+      total_count: number;
+    };
 
+    const rows = await this.prisma.$queryRaw<QuizListRow[]>`
+      SELECT
+        q.id,
+        q."quizCode",
+        q.question,
+        q.code,
+        q."imageUrl",
+        q."imagePublicId",
+        (
+          SELECT COALESCE(
+            json_agg(
+              json_build_object(
+                'label', o.label,
+                'content', o.content,
+                'isCode', o."isCode"
+              )
+              ORDER BY o.label
+            ),
+            '[]'::json
+          )
+          FROM options o
+          WHERE o."quizId" = q.id
+        ) AS options,
+        COUNT(*) OVER()::int AS total_count
+      FROM quizzes q
+      ORDER BY q."createdAt" DESC
+      LIMIT ${limit} OFFSET ${skip}
+    `;
+
+    const total = rows[0]?.total_count ?? 0;
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     return {
-      items: quizzes.map((quiz) => mapQuizPublic(toRawQuiz(quiz))),
+      items: rows.map((quiz) =>
+        mapQuizPublic(
+          toRawQuiz({
+            ...quiz,
+            options: quiz.options ?? [],
+          }),
+        ),
+      ),
       pagination: {
         page,
         limit,

@@ -214,32 +214,47 @@ export class TopicService {
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
 
-    const [items, total] = await Promise.all([
-      this.prisma.topic.findMany({
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          imageUrl: true,
-          imagePublicId: true,
-          createdAt: true,
-          _count: {
-            select: {
-              quizzes: true,
-            },
-          },
-        },
-      }),
-      this.prisma.topic.count(),
-    ]);
+    type TopicListRow = {
+      id: string;
+      name: string;
+      slug: string;
+      imageUrl: string | null;
+      imagePublicId: string | null;
+      createdAt: Date;
+      quiz_count: number;
+      total_count: number;
+    };
 
+    const rows = await this.prisma.$queryRaw<TopicListRow[]>`
+      SELECT
+        t.id,
+        t.name,
+        t.slug,
+        t."imageUrl",
+        t."imagePublicId",
+        t."createdAt",
+        (
+          SELECT COUNT(*)::int FROM quizzes z WHERE z."topicId" = t.id
+        ) AS quiz_count,
+        COUNT(*) OVER()::int AS total_count
+      FROM topics t
+      ORDER BY t."createdAt" DESC
+      LIMIT ${limit} OFFSET ${skip}
+    `;
+
+    const total = rows[0]?.total_count ?? 0;
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     return {
-      items,
+      items: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        slug: row.slug,
+        imageUrl: row.imageUrl,
+        imagePublicId: row.imagePublicId,
+        createdAt: row.createdAt,
+        _count: { quizzes: row.quiz_count },
+      })),
       pagination: {
         page,
         limit,

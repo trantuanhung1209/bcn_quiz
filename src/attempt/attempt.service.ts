@@ -406,57 +406,97 @@ export class AttemptService {
     const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
 
-    const where = {
-      userId,
-      ...(query.topicId ? { topicId: query.topicId } : {}),
-      ...(query.quizId ? { quizId: query.quizId } : {}),
+    type AttemptListRow = {
+      id: string;
+      userId: string;
+      quizId: string;
+      topicId: string;
+      sessionId: string | null;
+      selectedAnswer: string;
+      isCorrect: boolean;
+      score: number;
+      startedAt: Date | null;
+      submittedAt: Date;
+      durationMs: number | null;
+      createdAt: Date;
+      quiz_id: string;
+      quiz_code: string;
+      quiz_question: string;
+      quiz_image_url: string | null;
+      topic_id: string;
+      topic_name: string;
+      topic_slug: string;
+      total_count: number;
     };
 
-    const [items, total] = await Promise.all([
-      this.prisma.quizAttempt.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: {
-          submittedAt: 'desc',
-        },
-        select: {
-          id: true,
-          userId: true,
-          quizId: true,
-          topicId: true,
-          sessionId: true,
-          selectedAnswer: true,
-          isCorrect: true,
-          score: true,
-          startedAt: true,
-          submittedAt: true,
-          durationMs: true,
-          createdAt: true,
-          quiz: {
-            select: {
-              id: true,
-              quizCode: true,
-              question: true,
-              imageUrl: true,
-            },
-          },
-          topic: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-            },
-          },
-        },
-      }),
-      this.prisma.quizAttempt.count({ where }),
-    ]);
+    const topicFilter = query.topicId
+      ? Prisma.sql`AND a."topicId" = ${query.topicId}`
+      : Prisma.empty;
+    const quizFilter = query.quizId
+      ? Prisma.sql`AND a."quizId" = ${query.quizId}`
+      : Prisma.empty;
 
+    const rows = await this.prisma.$queryRaw<AttemptListRow[]>`
+      SELECT
+        a.id,
+        a."userId",
+        a."quizId",
+        a."topicId",
+        a."sessionId",
+        a."selectedAnswer",
+        a."isCorrect",
+        a.score,
+        a."startedAt",
+        a."submittedAt",
+        a."durationMs",
+        a."createdAt",
+        q.id AS quiz_id,
+        q."quizCode" AS quiz_code,
+        q.question AS quiz_question,
+        q."imageUrl" AS quiz_image_url,
+        t.id AS topic_id,
+        t.name AS topic_name,
+        t.slug AS topic_slug,
+        COUNT(*) OVER()::int AS total_count
+      FROM quiz_attempts a
+      INNER JOIN quizzes q ON q.id = a."quizId"
+      INNER JOIN topics t ON t.id = a."topicId"
+      WHERE a."userId" = ${userId}
+      ${topicFilter}
+      ${quizFilter}
+      ORDER BY a."submittedAt" DESC
+      LIMIT ${limit} OFFSET ${skip}
+    `;
+
+    const total = rows[0]?.total_count ?? 0;
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     return {
-      items,
+      items: rows.map((row) => ({
+        id: row.id,
+        userId: row.userId,
+        quizId: row.quizId,
+        topicId: row.topicId,
+        sessionId: row.sessionId,
+        selectedAnswer: row.selectedAnswer,
+        isCorrect: row.isCorrect,
+        score: row.score,
+        startedAt: row.startedAt,
+        submittedAt: row.submittedAt,
+        durationMs: row.durationMs,
+        createdAt: row.createdAt,
+        quiz: {
+          id: row.quiz_id,
+          quizCode: row.quiz_code,
+          question: row.quiz_question,
+          imageUrl: row.quiz_image_url,
+        },
+        topic: {
+          id: row.topic_id,
+          name: row.topic_name,
+          slug: row.topic_slug,
+        },
+      })),
       pagination: {
         page,
         limit,
@@ -738,39 +778,57 @@ export class AttemptService {
   async getMyProgress(req: ExpressRequest) {
     const userId = this.extractUserId(req);
 
-    const [attemptSummary, topicProgress] = await Promise.all([
-      this.prisma.quizAttempt.aggregate({
-        where: { userId },
-        _count: {
-          _all: true,
-        },
-        _sum: {
-          score: true,
-        },
-      }),
-      this.prisma.topicProgress.findMany({
-        where: { userId },
-        orderBy: { updatedAt: 'desc' },
-        include: {
-          topic: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-            },
-          },
-        },
-      }),
-    ]);
+    type ProgressRow = {
+      total_attempts: number;
+      correct_attempts: number;
+      by_topic: unknown;
+    };
 
-    const totalAttempts = attemptSummary._count._all;
-    const correctAttempts = attemptSummary._sum.score ?? 0;
+    const rows = await this.prisma.$queryRaw<ProgressRow[]>`
+      SELECT
+        (SELECT COUNT(*)::int FROM quiz_attempts a WHERE a."userId" = ${userId}) AS total_attempts,
+        (SELECT COALESCE(SUM(a.score), 0)::int FROM quiz_attempts a WHERE a."userId" = ${userId}) AS correct_attempts,
+        COALESCE(
+          (
+            SELECT json_agg(
+              json_build_object(
+                'id', tp.id,
+                'userId', tp."userId",
+                'topicId', tp."topicId",
+                'totalAttempts', tp."totalAttempts",
+                'correctAttempts', tp."correctAttempts",
+                'accuracy', tp.accuracy,
+                'isCompleted', tp."isCompleted",
+                'completedAt', tp."completedAt",
+                'completionThreshold', tp."completionThreshold",
+                'lastAttemptAt', tp."lastAttemptAt",
+                'createdAt', tp."createdAt",
+                'updatedAt', tp."updatedAt",
+                'topic', json_build_object(
+                  'id', t.id,
+                  'name', t.name,
+                  'slug', t.slug
+                )
+              )
+              ORDER BY tp."updatedAt" DESC
+            )
+            FROM topic_progresses tp
+            INNER JOIN topics t ON t.id = tp."topicId"
+            WHERE tp."userId" = ${userId}
+          ),
+          '[]'::json
+        ) AS by_topic
+    `;
+
+    const row = rows[0];
+    const totalAttempts = row?.total_attempts ?? 0;
+    const correctAttempts = row?.correct_attempts ?? 0;
 
     return {
       totalAttempts,
       correctAttempts,
       accuracy: totalAttempts > 0 ? correctAttempts / totalAttempts : 0,
-      byTopic: topicProgress,
+      byTopic: row?.by_topic ?? [],
     };
   }
 
