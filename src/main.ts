@@ -4,6 +4,7 @@ import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import helmet from 'helmet';
 import compression from 'compression';
 import { AppModule } from './app.module';
+import { GetCacheInterceptor } from './common/cache/get-cache.interceptor';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor';
 import { RequestLoggingInterceptor } from './common/logging/request-logging.interceptor';
 
@@ -48,7 +49,7 @@ async function bootstrap() {
       }
     },
     credentials: true,
-    exposedHeaders: ['X-Request-Id', 'X-Response-Time-Ms'],
+    exposedHeaders: ['X-Request-Id', 'X-Response-Time-Ms', 'X-Cache'],
   });
 
   app.useGlobalPipes(
@@ -59,7 +60,11 @@ async function bootstrap() {
     }),
   );
 
-  app.useGlobalInterceptors(app.get(RequestLoggingInterceptor), new ResponseInterceptor());
+  app.useGlobalInterceptors(
+    app.get(GetCacheInterceptor),
+    app.get(RequestLoggingInterceptor),
+    new ResponseInterceptor(),
+  );
 
   const port = getRequiredPort();
   await app.listen(port);

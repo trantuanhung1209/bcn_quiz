@@ -22,7 +22,7 @@ export class AuthService implements OnModuleInit {
   private readonly logger = new Logger(AuthService.name);
   private readonly baseUrl = process.env.PROFILES_API_BASE_URL;
   private readonly tokenCache = new AuthTokenCache<unknown>(
-    Number(process.env.AUTH_CACHE_TTL_MS ?? 30_000),
+    Number(process.env.AUTH_CACHE_TTL_MS ?? 60_000),
     Number(process.env.AUTH_CACHE_MAX_ENTRIES ?? 2_000),
   );
 
