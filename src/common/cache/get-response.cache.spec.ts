@@ -11,4 +11,20 @@ describe('GetResponseCache', () => {
     expect(cache.get('a')).toBe(1);
     expect(cache.get('c')).toBe(3);
   });
+
+  it('serves soft-stale after fresh TTL and drops after hard TTL', () => {
+    jest.useFakeTimers();
+    const cache = new GetResponseCache(1_000, 10, 2_000);
+
+    cache.set('k', { ok: true });
+    expect(cache.lookup('k')).toEqual({ hit: 'fresh', value: { ok: true } });
+
+    jest.advanceTimersByTime(1_001);
+    expect(cache.lookup('k')).toEqual({ hit: 'stale', value: { ok: true } });
+
+    jest.advanceTimersByTime(2_000);
+    expect(cache.lookup('k')).toEqual({ hit: 'miss' });
+
+    jest.useRealTimers();
+  });
 });

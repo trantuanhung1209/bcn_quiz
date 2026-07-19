@@ -37,9 +37,19 @@ const PER_USER_GET_PREFIXES = [
 
 @Injectable()
 export class GetCacheInterceptor implements NestInterceptor {
+  private readonly ttlMs = Number(process.env.GET_CACHE_TTL_MS ?? 60_000);
+  private readonly staleMs = Number(
+    process.env.GET_CACHE_STALE_MS ?? Math.max(this.ttlMs, 60_000),
+  );
+  private readonly browserMaxAgeSec = Math.max(
+    0,
+    Math.floor(Number(process.env.GET_CACHE_BROWSER_MAX_AGE_SEC ?? 30)),
+  );
+
   private readonly cache = new GetResponseCache(
-    Number(process.env.GET_CACHE_TTL_MS ?? 20_000),
+    this.ttlMs,
     Number(process.env.GET_CACHE_MAX_ENTRIES ?? 500),
+    this.staleMs,
   );
 
   private readonly enabled =
@@ -78,13 +88,16 @@ export class GetCacheInterceptor implements NestInterceptor {
     }
 
     const cacheKey = `${scope}:${userId}:${url}`;
-    const hit = this.cache.get(cacheKey);
-    if (hit !== undefined) {
-      response.setHeader('X-Cache', 'HIT');
-      return of(hit);
+    const lookup = this.cache.lookup(cacheKey);
+
+    // Fresh or soft-stale: both short-circuit DB. Soft-stale extends HIT rate
+    // without re-entering next.handle() on the same response (unsafe).
+    if (lookup.hit === 'fresh' || lookup.hit === 'stale') {
+      this.setCacheHeaders(response, lookup.hit === 'fresh' ? 'HIT' : 'STALE');
+      return of(lookup.value);
     }
 
-    response.setHeader('X-Cache', 'MISS');
+    this.setCacheHeaders(response, 'MISS');
     return next.handle().pipe(
       tap((body) => {
         const status = response.statusCode || 200;
@@ -93,6 +106,22 @@ export class GetCacheInterceptor implements NestInterceptor {
         }
       }),
     );
+  }
+
+  private setCacheHeaders(
+    response: Response,
+    state: 'HIT' | 'STALE' | 'MISS' | 'BYPASS',
+  ): void {
+    response.setHeader('X-Cache', state);
+    // private: authenticated payloads must not be shared by intermediate CDNs.
+    // Browser can reuse briefly → clientTotal often << 500ms on repeats.
+    if (this.browserMaxAgeSec > 0 && state !== 'BYPASS') {
+      response.setHeader(
+        'Cache-Control',
+        `private, max-age=${this.browserMaxAgeSec}, stale-while-revalidate=${Math.max(this.browserMaxAgeSec, 60)}`,
+      );
+      response.setHeader('Vary', 'Authorization, Cookie');
+    }
   }
 
   private shouldBypass(
@@ -107,7 +136,6 @@ export class GetCacheInterceptor implements NestInterceptor {
     if (revalidate === '1' || revalidate === 'true' || revalidate === true) {
       return true;
     }
-    // Avoid caching root health spam inconsistently; still cheap.
     if ((url.split('?')[0] ?? '') === '/') {
       return true;
     }
@@ -119,7 +147,6 @@ export class GetCacheInterceptor implements NestInterceptor {
       return 'user';
     }
 
-    // /course/progress/me is user-specific; /course and /course/:id are shared catalog.
     if (
       path.startsWith('/course/progress/me') ||
       path.includes('/progress/me') ||
@@ -135,8 +162,11 @@ export class GetCacheInterceptor implements NestInterceptor {
     }
 
     for (const prefix of SHARED_GET_PREFIXES) {
-      if (path === prefix || path.startsWith(`${prefix}?`) || path.startsWith(`${prefix}/`)) {
-        // /course/:id/progress/me already handled above
+      if (
+        path === prefix ||
+        path.startsWith(`${prefix}?`) ||
+        path.startsWith(`${prefix}/`)
+      ) {
         if (prefix === '/course' && path.includes('/progress/')) {
           return 'user';
         }
