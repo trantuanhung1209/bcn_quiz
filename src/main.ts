@@ -1,5 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { json, urlencoded } from 'express';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import helmet from 'helmet';
 import compression from 'compression';
@@ -9,9 +11,17 @@ import { ResponseInterceptor } from './common/interceptors/response.interceptor'
 import { RequestLoggingInterceptor } from './common/logging/request-logging.interceptor';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  // Disable default ~100kb parser so bulk POST /quiz/bulk (200 quizzes) is not 413.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bufferLogs: true,
+    bodyParser: false,
+  });
   const logger = app.get(WINSTON_MODULE_NEST_PROVIDER);
   app.useLogger(logger);
+
+  const bodyLimit = process.env.BODY_LIMIT ?? '5mb';
+  app.use(json({ limit: bodyLimit }));
+  app.use(urlencoded({ extended: true, limit: bodyLimit }));
 
   app.use(helmet());
   app.use(compression());

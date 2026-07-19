@@ -406,7 +406,7 @@ Body:
 
 `POST /quiz/bulk`
 
-Tao nhieu quiz trong **1 request**. Toi da **100** quiz / lan. Tat ca-or-nothing: 1 item sai → ca batch bi reject, khong tao quiz nao.
+Tao nhieu quiz trong **1 request**. Toi da **200** quiz / lan. Tat ca-or-nothing: 1 item sai → ca batch bi reject, khong tao quiz nao.
 
 Body:
 
@@ -446,7 +446,8 @@ Luu y:
 - Co the mix nhieu `topicId` trong 1 batch.
 - Trung `quizCode` (trong DB hoac trong batch) → `409`.
 - Item sai → `400` kem index `quizzes[i]` (all-or-nothing, khong tao quiz nao).
-- Transaction timeout mac dinh duoc set **60s** cho bulk (toi da 100 quiz).
+- Transaction timeout duoc set **120s** cho bulk (toi da 200 quiz).
+- Body JSON limit mac dinh **5mb** (`BODY_LIMIT`) — batch lon (vd. 200 quiz) se bi `413 request entity too large` neu vuot limit cu (~100kb).
 
 Response `data`:
 
