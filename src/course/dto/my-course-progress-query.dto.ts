@@ -1,6 +1,6 @@
 import { CourseProgressStatus } from '@prisma/client';
-import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
 
 export enum MyCourseProgressScope {
   ACTIVE = 'active',
@@ -34,4 +34,13 @@ export class MyCourseProgressQueryDto {
   @IsOptional()
   @IsEnum(MyCourseProgressScope)
   scope?: MyCourseProgressScope;
+
+  /**
+   * When true, heal/recompute the current page against curriculum before listing.
+   * Default false — admin curriculum writes already fan-out reevaluation.
+   */
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true' || value === '1')
+  @IsBoolean()
+  revalidate?: boolean = false;
 }

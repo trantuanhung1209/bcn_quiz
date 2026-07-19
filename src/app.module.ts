@@ -17,6 +17,7 @@ import { CertificateModule } from './certificate/certificate.module';
 import { RequestLoggingInterceptor } from './common/logging/request-logging.interceptor';
 import { RequestLoggingMiddleware } from './common/logging/request-logging.middleware';
 import { createWinstonLoggerOptions } from './common/logging/winston.config';
+import { PrismaModule } from './prisma/prisma.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { createWinstonLoggerOptions } from './common/logging/winston.config';
       limit: 100,
     }]),
     ScheduleModule.forRoot(),
+    PrismaModule,
     AuthModule,
     QuizModule,
     TopicModule,

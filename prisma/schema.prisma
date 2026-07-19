@@ -24,6 +24,8 @@ model Topic {
 
   createdAt DateTime @default(now())
 
+  @@index([createdAt])
+  @@index([slug, createdAt])
   @@map("topics")
 }
 
@@ -50,6 +52,9 @@ model Quiz {
   updatedAt   DateTime @updatedAt
 
   @@unique([topicId, quizCode])
+  @@index([createdAt])
+  @@index([topicId, createdAt])
+  @@index([quizCode, createdAt])
   @@map("quizzes")
 }
 
@@ -63,6 +68,7 @@ model Option {
   quizId   String
   quiz     Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
 
+  @@index([quizId])
   @@map("options")
 }
 
@@ -144,6 +150,7 @@ model Course {
   submissions    ProjectSubmission[]
   certificates   Certificate[]
 
+  @@index([createdAt])
   @@map("courses")
 }
 

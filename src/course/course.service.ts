@@ -72,7 +72,18 @@ export class CourseService {
         orderBy: {
           createdAt: 'desc',
         },
-        include: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          description: true,
+          imageUrl: true,
+          imagePublicId: true,
+          hasProject: true,
+          topicWeight: true,
+          projectWeight: true,
+          createdAt: true,
+          updatedAt: true,
           _count: {
             select: {
               topics: true,
@@ -80,7 +91,16 @@ export class CourseService {
               certificates: true,
             },
           },
-          projectRequirement: true,
+          projectRequirement: {
+            select: {
+              id: true,
+              title: true,
+              description: true,
+              isRequired: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          },
         },
       }),
       this.prisma.course.count(),
@@ -825,70 +845,65 @@ export class CourseService {
       ...this.buildMyCourseProgressStatusFilter(query),
     };
 
-    // Page-first: only heal/recompute the current page (not every enrolled course).
-    // Curriculum admin writes already fan-out reevaluation; Profiles sync stays on write paths.
-    const [pageRows, total] = await Promise.all([
-      this.prisma.userCourseProgress.findMany({
+    const courseInclude = {
+      course: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          description: true,
+          imageUrl: true,
+          hasProject: true,
+          topicWeight: true,
+          projectWeight: true,
+          _count: {
+            select: {
+              topics: true,
+            },
+          },
+          projectRequirement: {
+            select: {
+              id: true,
+              title: true,
+              isRequired: true,
+            },
+          },
+        },
+      },
+    } as const;
+
+    // Default: read stored progress only (fast). Optional ?revalidate=true heals the page.
+    // Admin curriculum writes already fan-out reevaluation on the write path.
+    if (query.revalidate) {
+      const pageRows = await this.prisma.userCourseProgress.findMany({
         where,
         skip,
         take: limit,
         orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
         select: { courseId: true },
+      });
+
+      await this.courseProgressService.evaluateCourseProgressBatch(
+        userId,
+        pageRows.map((row) => row.courseId),
+      );
+    }
+
+    const [rows, total] = await Promise.all([
+      this.prisma.userCourseProgress.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        include: courseInclude,
       }),
       this.prisma.userCourseProgress.count({ where }),
     ]);
 
-    await this.courseProgressService.evaluateCourseProgressBatch(
-      userId,
-      pageRows.map((row) => row.courseId),
-    );
-
-    const courseIds = pageRows.map((row) => row.courseId);
-    const rows =
-      courseIds.length === 0
-        ? []
-        : await this.prisma.userCourseProgress.findMany({
-            where: {
-              userId,
-              courseId: { in: courseIds },
-            },
-            include: {
-              course: {
-                select: {
-                  id: true,
-                  name: true,
-                  slug: true,
-                  description: true,
-                  imageUrl: true,
-                  hasProject: true,
-                  topicWeight: true,
-                  projectWeight: true,
-                  _count: {
-                    select: {
-                      topics: true,
-                    },
-                  },
-                  projectRequirement: {
-                    select: {
-                      id: true,
-                      title: true,
-                      isRequired: true,
-                    },
-                  },
-                },
-              },
-            },
-          });
-
-    const rowByCourseId = new Map(rows.map((row) => [row.courseId, row]));
-    const orderedRows = courseIds
-      .map((courseId) => rowByCourseId.get(courseId))
-      .filter((row): row is NonNullable<typeof row> => Boolean(row));
-
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     return {
-      items: orderedRows.map((row) => {
+      items: rows.map((row) => {
         const { course, ...progress } = row;
         return {
           ...progress,

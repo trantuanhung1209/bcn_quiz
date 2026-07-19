@@ -219,7 +219,13 @@ export class TopicService {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
-        include: {
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          imageUrl: true,
+          imagePublicId: true,
+          createdAt: true,
           _count: {
             select: {
               quizzes: true,

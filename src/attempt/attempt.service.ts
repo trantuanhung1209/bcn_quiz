@@ -420,7 +420,19 @@ export class AttemptService {
         orderBy: {
           submittedAt: 'desc',
         },
-        include: {
+        select: {
+          id: true,
+          userId: true,
+          quizId: true,
+          topicId: true,
+          sessionId: true,
+          selectedAnswer: true,
+          isCorrect: true,
+          score: true,
+          startedAt: true,
+          submittedAt: true,
+          durationMs: true,
+          createdAt: true,
           quiz: {
             select: {
               id: true,
