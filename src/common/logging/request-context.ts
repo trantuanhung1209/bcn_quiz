@@ -47,13 +47,14 @@ export const RequestContext = {
     }
 
     const endedAt = Date.now();
-    store.dbDurationMs += durationMs;
+    const roundedMs = Math.round(durationMs * 1000) / 1000;
+    store.dbDurationMs += roundedMs;
     store.dbQueryCount += 1;
     store.lastDbEndedAt = endedAt;
 
     if (store.queries.length < MAX_QUERIES_KEPT) {
       store.queries.push({
-        duration_ms: durationMs,
+        duration_ms: roundedMs,
         query: truncateQuery(query),
         ended_at: endedAt,
       });

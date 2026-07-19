@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Prisma, PrismaClient } from '@prisma/client';
+import { Pool } from 'pg';
 import { RequestContext } from '../common/logging/request-context';
 
 @Injectable()
@@ -9,6 +10,7 @@ export class PrismaService
   implements OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new Logger(PrismaService.name);
+  private readonly pool: Pool;
   private readonly logEachQuery =
     (process.env.REQUEST_QUERY_LOG ?? 'true').toLowerCase() !== 'false';
 
@@ -19,11 +21,27 @@ export class PrismaService
       throw new Error('DATABASE_URL is not set. Please define it in your environment (.env).');
     }
 
-    const pool = new PrismaPg({ connectionString: databaseUrl });
+    const pool = new Pool({
+      connectionString: databaseUrl,
+      max: Number(process.env.DB_POOL_MAX ?? 10),
+      // Keep sockets warm toward the remote DB so parallel queries do not
+      // each pay a fresh TCP/TLS handshake (~1s in the local→remote logs).
+      keepAlive: true,
+      keepAliveInitialDelayMillis: Number(
+        process.env.DB_POOL_KEEPALIVE_DELAY_MS ?? 10_000,
+      ),
+      idleTimeoutMillis: Number(process.env.DB_POOL_IDLE_MS ?? 60_000),
+      connectionTimeoutMillis: Number(process.env.DB_POOL_CONNECT_TIMEOUT_MS ?? 10_000),
+      allowExitOnIdle: false,
+    });
+
+    const adapter = new PrismaPg(pool);
     super({
-      adapter: pool,
+      adapter,
       log: [{ emit: 'event', level: 'query' }],
     });
+
+    this.pool = pool;
 
     this.$on('query', (event: Prisma.QueryEvent) => {
       RequestContext.recordDbQuery(event.duration, event.query);
@@ -42,14 +60,19 @@ export class PrismaService
   async onModuleInit() {
     const startedAt = Date.now();
     await this.$connect();
-    // Touch the pool so the first request does not pay connection setup cost.
-    await this.$queryRaw`SELECT 1`;
+
+    const warmCount = Math.max(1, Number(process.env.DB_POOL_WARM ?? 4));
+    await Promise.all(
+      Array.from({ length: warmCount }, () => this.$queryRaw`SELECT 1`),
+    );
+
     this.logger.log(
-      `Prisma connected and warmed durationMs=${Date.now() - startedAt}`,
+      `Prisma connected and warmed connections=${warmCount} durationMs=${Date.now() - startedAt}`,
     );
   }
 
   async onModuleDestroy() {
     await this.$disconnect();
+    await this.pool.end();
   }
 }

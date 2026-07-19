@@ -139,8 +139,11 @@ export class TopicService {
   private async fetchQuizzesPageByTopicId(
     topicId: string,
     query: PaginationQueryDto,
+    options?: { skipEnsure?: boolean },
   ) {
-    await this.ensureTopicExists(topicId);
+    if (!options?.skipEnsure) {
+      await this.ensureTopicExists(topicId);
+    }
 
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
@@ -193,7 +196,17 @@ export class TopicService {
       throw new NotFoundException(`Topic with slug '${slug}' was not found`);
     }
 
-    return this.getQuizzesByTopicId(topic.id, query);
+    // Topic already resolved by slug — skip duplicate ensureTopicExists round-trip.
+    const { items, pagination } = await this.fetchQuizzesPageByTopicId(
+      topic.id,
+      query,
+      { skipEnsure: true },
+    );
+
+    return {
+      items: items.map((quiz) => mapQuizPublic(toRawQuiz(quiz))),
+      pagination,
+    };
   }
 
   async getAllTopics(query: PaginationQueryDto) {
