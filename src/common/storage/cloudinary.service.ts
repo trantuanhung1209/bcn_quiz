@@ -73,13 +73,17 @@ export class CloudinaryService {
 
   /**
    * Default image optimization for quiz/topic/course covers.
+   * Only `format` is signed by default — top-level `quality` is NOT a standard
+   * Cloudinary upload param and commonly causes Invalid Signature when signed.
    * Empty CLOUDINARY_IMAGE_FORMAT disables conversion.
+   * Set CLOUDINARY_IMAGE_QUALITY only if you intentionally need it (rare).
    */
   getImageOptimizationDefaults(): { format?: string; quality?: string } {
     const format = (process.env.CLOUDINARY_IMAGE_FORMAT ?? 'webp')
       .trim()
       .toLowerCase();
-    const quality = (process.env.CLOUDINARY_IMAGE_QUALITY ?? 'auto')
+    // Default empty: do not sign quality (avoids Invalid Signature with Cloudinary).
+    const quality = (process.env.CLOUDINARY_IMAGE_QUALITY ?? '')
       .trim()
       .toLowerCase();
 

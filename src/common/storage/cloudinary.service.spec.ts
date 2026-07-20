@@ -8,17 +8,17 @@ describe('CloudinaryService image optimization signature', () => {
     process.env.CLOUDINARY_API_KEY = '123456789012345';
     process.env.CLOUDINARY_API_SECRET = 'test-secret';
     process.env.CLOUDINARY_IMAGE_FORMAT = 'webp';
-    process.env.CLOUDINARY_IMAGE_QUALITY = 'auto';
+    delete process.env.CLOUDINARY_IMAGE_QUALITY;
   });
 
   afterAll(() => {
     process.env = prev;
   });
 
-  it('signs format+quality and returns them for FE upload form', () => {
+  it('signs format only (no quality) and returns maxBytes for FE', () => {
     const service = new CloudinaryService();
     const defaults = service.getImageOptimizationDefaults();
-    expect(defaults).toEqual({ format: 'webp', quality: 'auto' });
+    expect(defaults).toEqual({ format: 'webp' });
     expect(service.getImageMaxBytes()).toBe(3 * 1024 * 1024);
 
     const sig = service.createUploadSignature({
@@ -29,7 +29,7 @@ describe('CloudinaryService image optimization signature', () => {
     });
 
     expect(sig.format).toBe('webp');
-    expect(sig.quality).toBe('auto');
+    expect(sig.quality).toBeUndefined();
     expect(sig.maxBytes).toBe(3 * 1024 * 1024);
     expect(sig.maxFileSizeMb).toBe(3);
     expect(sig.signature).toEqual(expect.any(String));
