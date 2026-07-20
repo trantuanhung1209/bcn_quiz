@@ -27,4 +27,16 @@ describe('GetResponseCache', () => {
 
     jest.useRealTimers();
   });
+
+  it('invalidateShared drops only shared:* keys', () => {
+    const cache = new GetResponseCache(60_000, 10);
+    cache.set('shared:shared:/topic/1/quizzes/full', { items: [1] });
+    cache.set('shared:shared:/topic?page=1', { quiz_count: 6 });
+    cache.set('user:42:/course/progress/me', { items: [] });
+
+    expect(cache.invalidateShared()).toBe(2);
+    expect(cache.get('shared:shared:/topic/1/quizzes/full')).toBeUndefined();
+    expect(cache.get('user:42:/course/progress/me')).toEqual({ items: [] });
+    expect(cache.size).toBe(1);
+  });
 });

@@ -35,25 +35,20 @@ const PER_USER_GET_PREFIXES = [
   '/certificate/me',
 ];
 
+/** Mutating these prefixes invalidates shared catalog cache. */
+const WRITE_INVALIDATE_PREFIXES = ['/quiz', '/topic', '/course'];
+
 @Injectable()
 export class GetCacheInterceptor implements NestInterceptor {
-  private readonly ttlMs = Number(process.env.GET_CACHE_TTL_MS ?? 60_000);
-  private readonly staleMs = Number(
-    process.env.GET_CACHE_STALE_MS ?? Math.max(this.ttlMs, 60_000),
-  );
   private readonly browserMaxAgeSec = Math.max(
     0,
-    Math.floor(Number(process.env.GET_CACHE_BROWSER_MAX_AGE_SEC ?? 30)),
-  );
-
-  private readonly cache = new GetResponseCache(
-    this.ttlMs,
-    Number(process.env.GET_CACHE_MAX_ENTRIES ?? 500),
-    this.staleMs,
+    Math.floor(Number(process.env.GET_CACHE_BROWSER_MAX_AGE_SEC ?? 0)),
   );
 
   private readonly enabled =
     (process.env.GET_CACHE_ENABLED ?? 'true').toLowerCase() !== 'false';
+
+  constructor(private readonly cache: GetResponseCache) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (!this.enabled) {
@@ -64,14 +59,28 @@ export class GetCacheInterceptor implements NestInterceptor {
     const request = http.getRequest<Request & { user?: RequestUser }>();
     const response = http.getResponse<Response>();
 
-    if (request.method !== 'GET') {
-      return next.handle();
-    }
-
     const url = request.originalUrl ?? request.url ?? '';
     const pathOnly = url.split('?')[0] ?? url;
 
-    if (this.shouldBypass(url, request.query as Record<string, unknown>)) {
+    // Writes: after success, drop shared catalog so quiz full / topic counts refresh.
+    if (request.method !== 'GET') {
+      if (!this.shouldInvalidateOnWrite(pathOnly)) {
+        return next.handle();
+      }
+
+      return next.handle().pipe(
+        tap({
+          next: () => {
+            const status = response.statusCode || 200;
+            if (status >= 200 && status < 400) {
+              this.cache.invalidateShared();
+            }
+          },
+        }),
+      );
+    }
+
+    if (this.shouldBypass(url, pathOnly, request.query as Record<string, unknown>)) {
       response.setHeader('X-Cache', 'BYPASS');
       return next.handle();
     }
@@ -90,14 +99,12 @@ export class GetCacheInterceptor implements NestInterceptor {
     const cacheKey = `${scope}:${userId}:${url}`;
     const lookup = this.cache.lookup(cacheKey);
 
-    // Fresh or soft-stale: both short-circuit DB. Soft-stale extends HIT rate
-    // without re-entering next.handle() on the same response (unsafe).
     if (lookup.hit === 'fresh' || lookup.hit === 'stale') {
-      this.setCacheHeaders(response, lookup.hit === 'fresh' ? 'HIT' : 'STALE');
+      this.setCacheHeaders(response, lookup.hit === 'fresh' ? 'HIT' : 'STALE', scope);
       return of(lookup.value);
     }
 
-    this.setCacheHeaders(response, 'MISS');
+    this.setCacheHeaders(response, 'MISS', scope);
     return next.handle().pipe(
       tap((body) => {
         const status = response.statusCode || 200;
@@ -108,14 +115,27 @@ export class GetCacheInterceptor implements NestInterceptor {
     );
   }
 
+  private shouldInvalidateOnWrite(path: string): boolean {
+    return WRITE_INVALIDATE_PREFIXES.some(
+      (prefix) => path === prefix || path.startsWith(`${prefix}/`),
+    );
+  }
+
   private setCacheHeaders(
     response: Response,
     state: 'HIT' | 'STALE' | 'MISS' | 'BYPASS',
+    scope: 'shared' | 'user' = 'shared',
   ): void {
     response.setHeader('X-Cache', state);
-    // private: authenticated payloads must not be shared by intermediate CDNs.
-    // Browser can reuse briefly → clientTotal often << 500ms on repeats.
-    if (this.browserMaxAgeSec > 0 && state !== 'BYPASS') {
+    // Shared catalog (admin quiz/topic lists) must not be browser-cached —
+    // otherwise CRUD looks "stuck" for max-age seconds even after server invalidate.
+    if (scope === 'shared' || this.browserMaxAgeSec <= 0) {
+      response.setHeader('Cache-Control', 'private, no-cache');
+      response.setHeader('Vary', 'Authorization, Cookie');
+      return;
+    }
+
+    if (state !== 'BYPASS') {
       response.setHeader(
         'Cache-Control',
         `private, max-age=${this.browserMaxAgeSec}, stale-while-revalidate=${Math.max(this.browserMaxAgeSec, 60)}`,
@@ -126,6 +146,7 @@ export class GetCacheInterceptor implements NestInterceptor {
 
   private shouldBypass(
     url: string,
+    pathOnly: string,
     query: Record<string, unknown>,
   ): boolean {
     const nocache = query?.nocache;
@@ -136,7 +157,11 @@ export class GetCacheInterceptor implements NestInterceptor {
     if (revalidate === '1' || revalidate === 'true' || revalidate === true) {
       return true;
     }
-    if ((url.split('?')[0] ?? '') === '/') {
+    if (pathOnly === '/') {
+      return true;
+    }
+    // Admin quiz editor: always fresh after import/delete (avoid stale "full" lists).
+    if (pathOnly.includes('/quizzes/full') || pathOnly.endsWith('/quizzes')) {
       return true;
     }
     return false;
