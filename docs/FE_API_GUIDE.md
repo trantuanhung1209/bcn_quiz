@@ -219,7 +219,7 @@ Luu y:
 
 Lay signature de FE upload anh truc tiep len Cloudinary (khong qua server).
 
-Anh quiz/topic/course duoc convert thanh **WebP** luc upload (`format=webp`, `quality=auto` nam trong signature). FE phai gui lai dung 2 field nay trong form Cloudinary. File project submission **khong** bi convert.
+Anh quiz/topic/course duoc convert thanh **WebP** luc upload (`format=webp` nam trong signature). FE phai gui lai `format` trong form Cloudinary neu signature co field do. File project submission **khong** bi convert.
 
 Gioi han kich thuoc anh: **toi da 3MB** (config `CLOUDINARY_IMAGE_MAX_BYTES`). Signature tra `maxBytes` / `maxFileSizeMb` de FE check `file.size` truoc khi upload; backend verify lai khi create/update (vuot → `400`, anh tren Cloudinary bi xoa).
 
@@ -245,7 +245,6 @@ Response `data`:
   "resourceType": "auto",
   "uploadUrl": "https://api.cloudinary.com/v1_1/your_cloud/auto/upload",
   "format": "webp",
-  "quality": "auto",
   "maxBytes": 3145728,
   "maxFileSizeMb": 3
 }
@@ -270,9 +269,9 @@ type UploadSignatureResponse = {
   cloudName: string;
   resourceType: 'auto';
   uploadUrl: string;
-  /** Backend mac dinh `webp` — FE BAT BUOC append cung field nay neu co. */
+  /** Backend mac dinh `webp` — FE BAT BUOC append neu co. */
   format?: string;
-  /** Backend mac dinh `auto` — FE BAT BUOC append neu co. */
+  /** Thuong khong co. Chi append neu signature tra ve. */
   quality?: string;
   /** Mac dinh 3MB — FE check file.size truoc khi upload. */
   maxBytes?: number;
@@ -302,9 +301,9 @@ async function uploadTopicImage(file: File, sig: UploadSignatureResponse, public
   form.append('signature', sig.signature);
   form.append('folder', sig.folder);
   form.append('resource_type', sig.resourceType);
-  // Convert/store as WebP (signed). Bo 2 dong nay → Cloudinary reject signature.
+  // Convert/store as WebP (signed). Thieu format → Invalid Signature.
   if (sig.format) form.append('format', sig.format);
-  if (sig.quality) form.append('quality', sig.quality);
+  if (sig.quality) form.append('quality', sig.quality); // chi khi BE tra ve
   if (publicId) form.append('public_id', publicId);
 
   const res = await fetch(sig.uploadUrl, { method: 'POST', body: form });
@@ -523,7 +522,7 @@ Body giong create — `quizCode` optional; `answer` van phai la label hop le:
 
 `POST /quiz/upload/signature`
 
-Lay signature de FE upload anh cau hoi truc tiep len Cloudinary (khong qua server) — giong het flow cua topic (Section 3.8), chi khac folder mac dinh la `quiz-images`. Response co them `format`/`quality` (mac dinh webp/auto) — FE phai append khi upload.
+Lay signature de FE upload anh cau hoi truc tiep len Cloudinary (khong qua server) — giong het flow cua topic (Section 3.8), chi khac folder mac dinh la `quiz-images`. Response co `format` (mac dinh webp) — FE phai append khi upload.
 
 Body (optional):
 
