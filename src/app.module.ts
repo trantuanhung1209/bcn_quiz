@@ -15,6 +15,7 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { CourseModule } from './course/course.module';
 import { CertificateModule } from './certificate/certificate.module';
 import { GetCacheInterceptor } from './common/cache/get-cache.interceptor';
+import { GetResponseCache } from './common/cache/get-response.cache';
 import { RequestLoggingInterceptor } from './common/logging/request-logging.interceptor';
 import { RequestLoggingMiddleware } from './common/logging/request-logging.middleware';
 import { createWinstonLoggerOptions } from './common/logging/winston.config';
@@ -40,6 +41,10 @@ import { PrismaModule } from './prisma/prisma.module';
   controllers: [AppController],
   providers: [
     AppService,
+    {
+      provide: GetResponseCache,
+      useFactory: () => new GetResponseCache(),
+    },
     GetCacheInterceptor,
     RequestLoggingInterceptor,
     RequestLoggingMiddleware,

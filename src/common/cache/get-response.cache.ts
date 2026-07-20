@@ -14,15 +14,21 @@ export type CacheLookup =
 /**
  * Tiny in-memory TTL cache for hot GET responses.
  * Soft-stale window keeps repeat GETs near 0ms server time after first fill.
+ * Provided as a singleton so writes can invalidate the same store GETs read.
  */
 export class GetResponseCache {
   private readonly store = new Map<string, CacheEntry>();
 
   constructor(
-    private readonly ttlMs: number,
-    private readonly maxEntries: number,
+    private readonly ttlMs: number = Number(process.env.GET_CACHE_TTL_MS ?? 20_000),
+    private readonly maxEntries: number = Number(
+      process.env.GET_CACHE_MAX_ENTRIES ?? 500,
+    ),
     /** Extra window after TTL where stale values may still be served. */
-    private readonly staleMs: number = Math.max(ttlMs, 30_000),
+    private readonly staleMs: number = Number(
+      process.env.GET_CACHE_STALE_MS ??
+        Math.max(Number(process.env.GET_CACHE_TTL_MS ?? 20_000), 20_000),
+    ),
   ) {}
 
   lookup(key: string): CacheLookup {
@@ -80,6 +86,26 @@ export class GetResponseCache {
       }
       this.store.delete(oldest);
     }
+  }
+
+  /** Drop every shared catalog entry (quiz / topic / course lists). */
+  invalidateShared(): number {
+    return this.invalidateWhere((key) => key.startsWith('shared:'));
+  }
+
+  invalidateWhere(predicate: (key: string) => boolean): number {
+    let removed = 0;
+    for (const key of [...this.store.keys()]) {
+      if (predicate(key)) {
+        this.store.delete(key);
+        removed += 1;
+      }
+    }
+    return removed;
+  }
+
+  get size(): number {
+    return this.store.size;
   }
 
   clear(): void {
