@@ -1176,6 +1176,10 @@ Luu y `PUT /course/:id/project-requirement`:
 - `imageUrl` va `imagePublicId` la optional, nhung neu gui phai gui **ca hai** cung luc. Gui mot trong hai -> `400`.
 - `imageUrl` phai la HTTPS URL thuoc `res.cloudinary.com` va dung cloud name.
 - Lay `imageUrl` + `imagePublicId` bang cach upload anh truoc qua `POST /course/upload/image-signature` (xem muc 7.4).
+- **Trong so progress:** neu gui `topicWeight` / `projectWeight` thi phai gui **ca hai**, va:
+  - `hasProject=true` → `topicWeight + projectWeight` **phai = 100** (thieu/thua → `400`, vd `"topicWeight + projectWeight must equal 100 (got 80)"`).
+  - `hasProject=false` → chi chap nhan `topicWeight=100`, `projectWeight=0`.
+  - Khong gui ca hai → backend dung mac dinh `50/50` (co project) hoac `100/0` (khong project).
 
 **Body `PUT /course/:id`** (tat ca optional):
 
@@ -1191,7 +1195,7 @@ Luu y `PUT /course/:id/project-requirement`:
 ```
 
 - Khi cap nhat `imagePublicId` moi khac cu, anh cu tren Cloudinary se tu dong bi **xoa**.
-
+- Doi weight: cung rule nhu create — gui 1 trong 2 → `400`; tong ≠ 100 → `400`.
 **Body `PATCH .../review`:**
 
 ```json

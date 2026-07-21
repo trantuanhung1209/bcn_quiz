@@ -262,6 +262,12 @@ export class CourseService {
     }
 
     const hasProject = Boolean(data.hasProject);
+    this.assertCourseProgressWeights({
+      hasProject,
+      topicWeight: data.topicWeight,
+      projectWeight: data.projectWeight,
+      requirePairWhenAnyProvided: true,
+    });
 
     const topicWeight = hasProject ? 50 : 100;
     const projectWeight = hasProject ? 50 : 0;
@@ -308,12 +314,62 @@ export class CourseService {
       select: { hasProject: true, topicWeight: true, projectWeight: true },
     });
 
-    const hasProject = data.hasProject;
+    if (!existingCourse) {
+      throw new NotFoundException(`Course with id '${id}' was not found`);
+    }
+
+    const hasProject =
+      typeof data.hasProject === 'boolean'
+        ? data.hasProject
+        : existingCourse.hasProject;
+
+    const providedAnyWeight =
+      data.topicWeight !== undefined || data.projectWeight !== undefined;
+
+    // Enabling project with no custom weights → defaults 50/50 (skip custom check).
+    const usingDefaultsForNewProject =
+      typeof data.hasProject === 'boolean' &&
+      data.hasProject === true &&
+      !existingCourse.hasProject &&
+      !providedAnyWeight;
+
+    // Disabling project with no custom weights → defaults 100/0 (skip custom check).
+    const usingDefaultsForNoProject =
+      typeof data.hasProject === 'boolean' &&
+      data.hasProject === false &&
+      !providedAnyWeight;
+
+    if (!usingDefaultsForNewProject && !usingDefaultsForNoProject) {
+      if (providedAnyWeight || typeof data.hasProject === 'boolean') {
+        const resolvedTopic =
+          data.topicWeight ??
+          (typeof data.hasProject === 'boolean' && data.hasProject
+            ? 50
+            : typeof data.hasProject === 'boolean' && !data.hasProject
+              ? 100
+              : existingCourse.topicWeight);
+        const resolvedProject =
+          data.projectWeight ??
+          (typeof data.hasProject === 'boolean' && data.hasProject
+            ? 50
+            : typeof data.hasProject === 'boolean' && !data.hasProject
+              ? 0
+              : existingCourse.projectWeight);
+
+        this.assertCourseProgressWeights({
+          hasProject,
+          topicWeight: providedAnyWeight ? data.topicWeight : resolvedTopic,
+          projectWeight: providedAnyWeight ? data.projectWeight : resolvedProject,
+          requirePairWhenAnyProvided: providedAnyWeight,
+        });
+      }
+    }
+
     const weightsChanged =
       (data.topicWeight !== undefined &&
-        existingCourse?.topicWeight !== data.topicWeight) ||
+        existingCourse.topicWeight !== data.topicWeight) ||
       (data.projectWeight !== undefined &&
-        existingCourse?.projectWeight !== data.projectWeight);
+        existingCourse.projectWeight !== data.projectWeight);
 
     const updated = await this.prisma.course.update({
       where: { id },
@@ -323,22 +379,25 @@ export class CourseService {
         ...(data.description !== undefined && { description: data.description }),
         ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
         ...(data.imagePublicId !== undefined && { imagePublicId: data.imagePublicId }),
-        ...(typeof hasProject === 'boolean'
+        ...(typeof data.hasProject === 'boolean'
           ? {
-              hasProject,
-              topicWeight: data.topicWeight ?? (hasProject ? 50 : 100),
-              projectWeight: data.projectWeight ?? (hasProject ? 50 : 0),
+              hasProject: data.hasProject,
+              topicWeight: data.topicWeight ?? (data.hasProject ? 50 : 100),
+              projectWeight: data.projectWeight ?? (data.hasProject ? 50 : 0),
             }
           : {}),
-        ...(data.topicWeight !== undefined && typeof hasProject !== 'boolean' && { topicWeight: data.topicWeight }),
-        ...(data.projectWeight !== undefined && typeof hasProject !== 'boolean' && { projectWeight: data.projectWeight }),
+        ...(data.topicWeight !== undefined &&
+          typeof data.hasProject !== 'boolean' && { topicWeight: data.topicWeight }),
+        ...(data.projectWeight !== undefined &&
+          typeof data.hasProject !== 'boolean' && {
+            projectWeight: data.projectWeight,
+          }),
       },
     });
 
     const hasProjectToggled =
-      typeof hasProject === 'boolean' &&
-      Boolean(existingCourse) &&
-      existingCourse!.hasProject !== hasProject;
+      typeof data.hasProject === 'boolean' &&
+      existingCourse.hasProject !== data.hasProject;
 
     if (hasProjectToggled || weightsChanged) {
       await this.courseProgressService.reevaluateAllUsersForCourse(id);
@@ -1307,6 +1366,49 @@ export class CourseService {
     }
 
     return [...new Set(rawTargets.map((item) => item.trim()).filter((item) => item.length > 0))];
+  }
+
+  private assertCourseProgressWeights(params: {
+    hasProject: boolean;
+    topicWeight?: number;
+    projectWeight?: number;
+    requirePairWhenAnyProvided?: boolean;
+  }): void {
+    const {
+      hasProject,
+      topicWeight,
+      projectWeight,
+      requirePairWhenAnyProvided = false,
+    } = params;
+
+    const hasTopicWeight = topicWeight !== undefined;
+    const hasProjectWeight = projectWeight !== undefined;
+
+    if (requirePairWhenAnyProvided && hasTopicWeight !== hasProjectWeight) {
+      throw new BadRequestException(
+        'Both topicWeight and projectWeight are required when setting progress weights',
+      );
+    }
+
+    if (!hasTopicWeight || !hasProjectWeight) {
+      return;
+    }
+
+    if (!hasProject) {
+      if (topicWeight !== 100 || projectWeight !== 0) {
+        throw new BadRequestException(
+          'Courses without a project must use topicWeight=100 and projectWeight=0',
+        );
+      }
+      return;
+    }
+
+    const sum = topicWeight + projectWeight;
+    if (sum !== 100) {
+      throw new BadRequestException(
+        `topicWeight + projectWeight must equal 100 (got ${sum})`,
+      );
+    }
   }
 
   private async validateCourseImageFields(
