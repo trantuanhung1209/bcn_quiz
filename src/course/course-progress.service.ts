@@ -14,6 +14,8 @@ type CourseForProgressEval = {
   name: string;
   slug: string;
   hasProject: boolean;
+  topicWeight: number;
+  projectWeight: number;
   topics: Array<{ topicId: string }>;
   projectRequirement: { id: string; isRequired: boolean } | null;
 };
@@ -362,12 +364,19 @@ export class CourseProgressService {
       totalTopics > 0 && completedTopicCount === totalTopics;
 
     const requiresProjectApproval = course.hasProject;
-    const topicWeight = requiresProjectApproval ? 50 : 100;
+    // Course weights (default 50/50). Without project, topics are 100%.
+    const topicWeight = requiresProjectApproval
+      ? Math.max(0, Math.min(100, course.topicWeight ?? 50))
+      : 100;
+    const projectWeight = requiresProjectApproval
+      ? Math.max(0, Math.min(100, course.projectWeight ?? 50))
+      : 0;
+
     const topicProgressPercent =
       totalTopics > 0
         ? Math.round((completedTopicCount / totalTopics) * topicWeight)
         : 0;
-    const projectProgressPercent = hasApprovedProject ? 50 : 0;
+    const projectProgressPercent = hasApprovedProject ? projectWeight : 0;
 
     let progressPercent = Math.min(
       100,
@@ -381,8 +390,9 @@ export class CourseProgressService {
       requiresProjectApproval &&
       !hasApprovedProject
     ) {
+      // Topics done, waiting for project approval → only topic weight counts
       status = CourseProgressStatus.PROJECT_PENDING_APPROVAL;
-      progressPercent = 50;
+      progressPercent = topicProgressPercent;
     }
 
     if (topicMilestoneCompleted && !requiresProjectApproval) {

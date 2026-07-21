@@ -863,8 +863,10 @@ Tra thong ke chi tiet:
 ## 7) Course APIs
 
 Rule hoan thanh course:
-- Hoan thanh tat ca topic (moi topic `isCompleted = true`, dat >= 80% accuracy) → 50% tien do khoa hoc (neu co project) hoac 100% (neu khong co project).
-- Neu course co project requirement: chi khi admin duyet project moi len 100% va cap chung chi.
+- `topicWeight` + `projectWeight` (tren Course) quy dinh ty le dong gop vao `progressPercent` (mac dinh 50/50 neu co project; 100/0 neu khong co project).
+- Hoan thanh tat ca topic (moi topic `isCompleted = true`, dat >= 80% accuracy) → `topicProgressPercent` = `topicWeight` (vi du weight 10 → hien 10%). Neu khong co project → 100%.
+- Phan project (`projectProgressPercent` = `projectWeight`) **chi duoc cong** khi admin **duyet** submission (`APPROVED`) — chi nop file chua duoc tinh %.
+- `progressPercent` = `topicProgressPercent` + `projectProgressPercent` (cap 100 khi COMPLETED).
 - Neu course khong co project requirement: hoan thanh tat ca topic se len 100%.
 
 **Curriculum reopen (Option B) — quan trong cho FE:**
@@ -914,6 +916,15 @@ Vi du tab FE:
 - Tat ca: `GET /course/progress/me`
 
 Response `data`:
+
+Y nghia cac field progress (vi du `topicWeight=10`, `projectWeight=90`):
+
+| Field | Y nghia |
+|---|---|
+| `topicProgressPercent` | Phan tram khoa hoc den tu topic = `(so topic done / tong topic) * topicWeight`. Full topic → `10`. |
+| `projectProgressPercent` | Phan tram den tu project = `projectWeight` khi submission **APPROVED**, nguoc lai `0`. Chi nop (pending) van la `0`. |
+| `progressPercent` | Tong 2 phan tren (cap `100` khi `COMPLETED`). Full topic + chua duyet project → `10`, status `PROJECT_PENDING_APPROVAL`. |
+| `course.topicWeight` / `projectWeight` | Trong so cau hinh tren Course (metadata). Mac dinh `50`/`50`. |
 
 ```json
 {
@@ -1165,6 +1176,10 @@ Luu y `PUT /course/:id/project-requirement`:
 - `imageUrl` va `imagePublicId` la optional, nhung neu gui phai gui **ca hai** cung luc. Gui mot trong hai -> `400`.
 - `imageUrl` phai la HTTPS URL thuoc `res.cloudinary.com` va dung cloud name.
 - Lay `imageUrl` + `imagePublicId` bang cach upload anh truoc qua `POST /course/upload/image-signature` (xem muc 7.4).
+- **Trong so progress:** neu gui `topicWeight` / `projectWeight` thi phai gui **ca hai**, va:
+  - `hasProject=true` → `topicWeight + projectWeight` **phai = 100** (thieu/thua → `400`, vd `"topicWeight + projectWeight must equal 100 (got 80)"`).
+  - `hasProject=false` → chi chap nhan `topicWeight=100`, `projectWeight=0`.
+  - Khong gui ca hai → backend dung mac dinh `50/50` (co project) hoac `100/0` (khong project).
 
 **Body `PUT /course/:id`** (tat ca optional):
 
@@ -1180,7 +1195,7 @@ Luu y `PUT /course/:id/project-requirement`:
 ```
 
 - Khi cap nhat `imagePublicId` moi khac cu, anh cu tren Cloudinary se tu dong bi **xoa**.
-
+- Doi weight: cung rule nhu create — gui 1 trong 2 → `400`; tong ≠ 100 → `400`.
 **Body `PATCH .../review`:**
 
 ```json
@@ -1319,10 +1334,10 @@ async function createCourseWithImage(
 4. Trong qua trinh hoc, theo doi tien do:
    - `GET /course/:id/progress/me`
    - `GET /progress/me/topic/:topicId`
-5. Khi tat ca topic dat >= 80% → UI hien thi 50% course progress.
-6. User nop project: `POST /course/:id/project-submission`.
+5. Khi tat ca topic dat >= 80% → UI hien thi `topicWeight`% course progress (mac dinh 50; vd weight 10 → 10%). `projectProgressPercent` van 0 cho den khi admin duyet.
+6. User nop project: `POST /course/:id/project-submission` (chi nop **chua** cong % project).
 7. Neu can cap nhat bai nop: `PATCH /course/:id/project-submission/:submissionId`.
-8. Sau khi admin approve → refresh `GET /course/:id/progress/me` de thay 100%.
+8. Sau khi admin approve → refresh `GET /course/:id/progress/me` de thay `projectProgressPercent` = `projectWeight` va `progressPercent` = 100.
 9. Lay chung chi: `GET /certificate/me`.
 10. Tab "Dang hoc" / "Da xong": `GET /course/progress/me?scope=active|completed`.
 
