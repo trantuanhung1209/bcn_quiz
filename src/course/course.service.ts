@@ -305,10 +305,15 @@ export class CourseService {
 
     const existingCourse = await this.prisma.course.findUnique({
       where: { id },
-      select: { hasProject: true },
+      select: { hasProject: true, topicWeight: true, projectWeight: true },
     });
 
     const hasProject = data.hasProject;
+    const weightsChanged =
+      (data.topicWeight !== undefined &&
+        existingCourse?.topicWeight !== data.topicWeight) ||
+      (data.projectWeight !== undefined &&
+        existingCourse?.projectWeight !== data.projectWeight);
 
     const updated = await this.prisma.course.update({
       where: { id },
@@ -330,11 +335,12 @@ export class CourseService {
       },
     });
 
-    if (
+    const hasProjectToggled =
       typeof hasProject === 'boolean' &&
-      existingCourse &&
-      existingCourse.hasProject !== hasProject
-    ) {
+      Boolean(existingCourse) &&
+      existingCourse!.hasProject !== hasProject;
+
+    if (hasProjectToggled || weightsChanged) {
       await this.courseProgressService.reevaluateAllUsersForCourse(id);
     }
 
