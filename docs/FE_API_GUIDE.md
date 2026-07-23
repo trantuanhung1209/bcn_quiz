@@ -58,11 +58,11 @@ Tai lieu nay tong hop toan bo API hien co de frontend tich hop nhanh.
 
 3. **Hieu suat**
    - Toan bo JSON response tu dong nen `gzip`. FE khong can config them.
-   - Backend cache ket qua `GET /auth/me` (Profiles) trong bo nho theo token (~30s, env `AUTH_CACHE_TTL_MS`) de giam latency request protected. FE van nen gui Bearer token nhu binh thuong; khong can doi flow.
+   - Backend cache **validate token** / Profiles (`AUTH_CACHE_TTL_MS`, ~60s) — khac voi GET response cache. `GET /auth/me` **khong** response-cache (`X-Cache: BYPASS`).
    - Cac GET list/hot path co **response cache** ngan (~20s, env `GET_CACHE_TTL_MS`). Header `X-Cache: HIT|MISS|BYPASS`. Tat bang `GET_CACHE_ENABLED=false` hoac `?nocache=1`.
-   - Sau POST/PUT/PATCH/DELETE `/quiz|/topic|/course`, server **clear toan bo GET cache** ngay — list/detail/progress refresh ngay, khong phai doi TTL.
+   - Sau POST/PUT/PATCH/DELETE `/quiz|/topic|/course|/attempt|/progress|/certificate`, server **clear toan bo GET cache** ngay — list/detail refresh ngay, khong phai doi TTL.
    - Soft-stale mac dinh **tat** (`GET_CACHE_STALE_MS=0`); interceptor chi tra HIT khi con fresh, het TTL thi fetch lai.
-   - `GET /topic/:id/quizzes` va `/quizzes/full` **khong cache** (`X-Cache: BYPASS`) de man admin luon fresh.
+   - **Khong cache** (luon `X-Cache: BYPASS`): `GET /auth/me`, `/course/progress/me`, `/course/:id/progress/me`, `/progress/me…`, `/attempt/…`, `/certificate/me…`, `…/project-submission…`, va `GET /topic/:id/quizzes` + `/quizzes/full`.
 
 ### Public APIs
 
