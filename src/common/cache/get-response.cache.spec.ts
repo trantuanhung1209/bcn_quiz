@@ -28,6 +28,30 @@ describe('GetResponseCache', () => {
     jest.useRealTimers();
   });
 
+  it('defaults to no soft-stale window (staleMs=0)', () => {
+    jest.useFakeTimers();
+    const cache = new GetResponseCache(1_000, 10);
+
+    cache.set('k', { ok: true });
+    expect(cache.lookup('k')).toEqual({ hit: 'fresh', value: { ok: true } });
+
+    jest.advanceTimersByTime(1_001);
+    expect(cache.lookup('k')).toEqual({ hit: 'miss' });
+
+    jest.useRealTimers();
+  });
+
+  it('clear drops shared and per-user keys', () => {
+    const cache = new GetResponseCache(60_000, 10);
+    cache.set('shared:shared:/topic?page=1', { quiz_count: 6 });
+    cache.set('user:42:/course/progress/me', { items: [] });
+
+    cache.clear();
+    expect(cache.size).toBe(0);
+    expect(cache.get('shared:shared:/topic?page=1')).toBeUndefined();
+    expect(cache.get('user:42:/course/progress/me')).toBeUndefined();
+  });
+
   it('invalidateShared drops only shared:* keys', () => {
     const cache = new GetResponseCache(60_000, 10);
     cache.set('shared:shared:/topic/1/quizzes/full', { items: [1] });

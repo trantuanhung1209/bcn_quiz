@@ -24,11 +24,8 @@ export class GetResponseCache {
     private readonly maxEntries: number = Number(
       process.env.GET_CACHE_MAX_ENTRIES ?? 500,
     ),
-    /** Extra window after TTL where stale values may still be served. */
-    private readonly staleMs: number = Number(
-      process.env.GET_CACHE_STALE_MS ??
-        Math.max(Number(process.env.GET_CACHE_TTL_MS ?? 20_000), 20_000),
-    ),
+    /** Extra window after TTL where stale values may still be served. Default 0 = no soft-stale. */
+    private readonly staleMs: number = Number(process.env.GET_CACHE_STALE_MS ?? 0),
   ) {}
 
   lookup(key: string): CacheLookup {

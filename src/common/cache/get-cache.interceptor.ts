@@ -62,7 +62,8 @@ export class GetCacheInterceptor implements NestInterceptor {
     const url = request.originalUrl ?? request.url ?? '';
     const pathOnly = url.split('?')[0] ?? url;
 
-    // Writes: after success, drop shared catalog so quiz full / topic counts refresh.
+    // Writes: after success, drop ALL GET cache so admin/list/progress refresh immediately.
+    // (Shared-only invalidate left per-user entries stale until TTL — felt like "wait ~2 min".)
     if (request.method !== 'GET') {
       if (!this.shouldInvalidateOnWrite(pathOnly)) {
         return next.handle();
@@ -73,7 +74,7 @@ export class GetCacheInterceptor implements NestInterceptor {
           next: () => {
             const status = response.statusCode || 200;
             if (status >= 200 && status < 400) {
-              this.cache.invalidateShared();
+              this.cache.clear();
             }
           },
         }),
@@ -99,8 +100,9 @@ export class GetCacheInterceptor implements NestInterceptor {
     const cacheKey = `${scope}:${userId}:${url}`;
     const lookup = this.cache.lookup(cacheKey);
 
-    if (lookup.hit === 'fresh' || lookup.hit === 'stale') {
-      this.setCacheHeaders(response, lookup.hit === 'fresh' ? 'HIT' : 'STALE', scope);
+    // Only serve fresh. Soft-stale must re-fetch so CRUD never looks "stuck".
+    if (lookup.hit === 'fresh') {
+      this.setCacheHeaders(response, 'HIT', scope);
       return of(lookup.value);
     }
 
