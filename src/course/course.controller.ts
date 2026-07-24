@@ -119,6 +119,11 @@ export class CourseController {
     return this.courseService.updateCourseTopics(id, data);
   }
 
+  @Get(':id/project-requirement')
+  async getProjectRequirement(@Param('id') id: string) {
+    return this.courseService.getProjectRequirement(id);
+  }
+
   @Roles('admin')
   @Put(':id/project-requirement')
   async upsertProjectRequirement(
