@@ -889,6 +889,7 @@ Rule hoan thanh course:
 | `GET` | `/course/:id/topics?page=1&limit=10` | |
 | `GET` | `/course/:id/progress/me` | Chi tiet progress **1** course |
 | `GET` | `/course/:id/project-submission/me` | |
+| `GET` | `/course/:id/project-requirement` | De bai project (title, description, isRequired). `404` neu chua cau hinh |
 | `POST` | `/course/:id/upload/signature` | Lay signature upload Cloudinary (project file) |
 | `POST` | `/course/:id/project-submission` | Submit metadata file |
 | `PATCH` | `/course/:id/project-submission/:submissionId` | Cap nhat submission |
@@ -1133,12 +1134,28 @@ async function handleProjectUpload(courseId: string, file: File) {
 | `PUT` | `/course/:id` | Cap nhat course |
 | `DELETE` | `/course/:id` | Xoa course |
 | `PUT` | `/course/:id/topics` | Cap nhat danh sach topic |
+| `GET` | `/course/:id/project-requirement` | Lay de bai project (admin/learner deu dung duoc) |
 | `PUT` | `/course/:id/project-requirement` | Upsert de bai project |
 | `GET` | `/course/:id/project-submission?status=...&page=1&limit=100` | List submission (array; mac dinh max 100/page) |
 | `PATCH` | `/course/:id/project-submission/:submissionId/review` | Duyet bai nop |
 
-Luu y `PUT /course/:id/project-requirement`:
-- `description` bat buoc, khong duoc de trong.
+Luu y project requirement:
+- **Truoc day khong co GET** rieng — chi co `PUT`. FE goi `GET /course/:id/project-requirement` se `404`.
+- Workaround cu: `GET /course/:id` (hoac slug) → field `projectRequirement` (co the `null` neu chua upsert).
+- `PUT /course/:id/project-requirement`: `description` bat buoc, khong duoc de trong.
+- Response GET/PUT:
+
+```json
+{
+  "id": "...",
+  "courseId": "...",
+  "title": "Mini project",
+  "description": "Nop zip + README",
+  "isRequired": true,
+  "createdAt": "...",
+  "updatedAt": "..."
+}
+```
 
 **Course response fields** (`imageUrl`, `imagePublicId` co the la `null`):
 

@@ -506,6 +506,22 @@ export class CourseService {
     return topic;
   }
 
+  async getProjectRequirement(courseId: string) {
+    await this.ensureCourseExists(courseId);
+
+    const requirement = await this.prisma.courseProjectRequirement.findUnique({
+      where: { courseId },
+    });
+
+    if (!requirement) {
+      throw new NotFoundException(
+        `Project requirement for course '${courseId}' was not found`,
+      );
+    }
+
+    return requirement;
+  }
+
   async upsertProjectRequirement(courseId: string, data: UpsertCourseProjectDto) {
     const course = await this.ensureCourseExists(courseId);
     const normalizedDescription = data.description.trim();
