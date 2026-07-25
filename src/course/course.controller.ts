@@ -125,6 +125,15 @@ export class CourseController {
   }
 
   @Roles('admin')
+  @Post(':id/project-requirement/upload/signature')
+  async createProjectRequirementUploadSignature(
+    @Param('id') id: string,
+    @Body() data: CreateUploadSignatureDto,
+  ) {
+    return this.courseService.createProjectRequirementUploadSignature(id, data);
+  }
+
+  @Roles('admin')
   @Put(':id/project-requirement')
   async upsertProjectRequirement(
     @Param('id') id: string,

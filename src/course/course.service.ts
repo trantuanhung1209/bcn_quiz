@@ -84,6 +84,9 @@ export class CourseService {
       req_title: string | null;
       req_description: string | null;
       req_is_required: boolean | null;
+      req_attachment_url: string | null;
+      req_attachment_public_id: string | null;
+      req_attachment_original_name: string | null;
       req_created_at: Date | null;
       req_updated_at: Date | null;
       total_count: number;
@@ -109,6 +112,9 @@ export class CourseService {
         pr.title AS req_title,
         pr.description AS req_description,
         pr."isRequired" AS req_is_required,
+        pr."attachmentUrl" AS req_attachment_url,
+        pr."attachmentPublicId" AS req_attachment_public_id,
+        pr."attachmentOriginalName" AS req_attachment_original_name,
         pr."createdAt" AS req_created_at,
         pr."updatedAt" AS req_updated_at,
         COUNT(*) OVER()::int AS total_count
@@ -145,6 +151,9 @@ export class CourseService {
               title: row.req_title,
               description: row.req_description,
               isRequired: row.req_is_required,
+              attachmentUrl: row.req_attachment_url,
+              attachmentPublicId: row.req_attachment_public_id,
+              attachmentOriginalName: row.req_attachment_original_name,
               createdAt: row.req_created_at,
               updatedAt: row.req_updated_at,
             }
@@ -530,20 +539,45 @@ export class CourseService {
       throw new BadRequestException('Project description is required');
     }
 
+    const existingRequirement =
+      await this.prisma.courseProjectRequirement.findUnique({
+        where: { courseId },
+        select: {
+          attachmentUrl: true,
+          attachmentPublicId: true,
+          attachmentOriginalName: true,
+        },
+      });
+
+    const attachmentPatch = await this.resolveRequirementAttachmentPatch(
+      courseId,
+      data,
+      existingRequirement,
+    );
+
     const requirement = await this.prisma.courseProjectRequirement.upsert({
       where: { courseId },
       update: {
         title: data.title,
         description: normalizedDescription,
         isRequired: data.isRequired ?? true,
+        ...attachmentPatch.data,
       },
       create: {
         courseId,
         title: data.title,
         description: normalizedDescription,
         isRequired: data.isRequired ?? true,
+        attachmentUrl: attachmentPatch.data.attachmentUrl ?? null,
+        attachmentPublicId: attachmentPatch.data.attachmentPublicId ?? null,
+        attachmentOriginalName:
+          attachmentPatch.data.attachmentOriginalName ?? null,
       },
     });
+
+    if (attachmentPatch.publicIdToDelete) {
+      await this.deleteCloudinaryFiles([attachmentPatch.publicIdToDelete]);
+    }
 
     let enabledProject = false;
     if (!course.hasProject) {
@@ -563,6 +597,28 @@ export class CourseService {
     }
 
     return requirement;
+  }
+
+  /**
+   * Admin: signature to upload optional requirement brief/spec (pdf/docx/zip/rar).
+   */
+  async createProjectRequirementUploadSignature(
+    courseId: string,
+    dto: CreateUploadSignatureDto,
+  ) {
+    await this.ensureCourseExists(courseId);
+
+    const folder = this.getProjectRequirementFolder(courseId);
+    const timestamp = Math.floor(Date.now() / 1000);
+    const publicId = dto.publicId?.trim()
+      ? this.sanitizePublicId(dto.publicId)
+      : undefined;
+
+    return this.cloudinaryService.createUploadSignature({
+      timestamp,
+      folder,
+      publicId,
+    });
   }
 
   async createUploadSignature(
@@ -1191,6 +1247,141 @@ export class CourseService {
       .replace(/^\/+|\/+$/g, '');
 
     return `${baseFolder}/${courseId}/${userId}`;
+  }
+
+  private getProjectRequirementFolder(courseId: string): string {
+    const baseFolder = (
+      process.env.CLOUDINARY_PROJECT_REQUIREMENT_FOLDER ?? 'project-requirements'
+    ).replace(/^\/+|\/+$/g, '');
+
+    return `${baseFolder}/${courseId}`;
+  }
+
+  /**
+   * Resolve optional attachment fields for requirement upsert.
+   * - omit both url/publicId → keep existing
+   * - both null → clear
+   * - both set → validate + replace (delete old after save)
+   */
+  private async resolveRequirementAttachmentPatch(
+    courseId: string,
+    data: UpsertCourseProjectDto,
+    existing: {
+      attachmentUrl: string | null;
+      attachmentPublicId: string | null;
+      attachmentOriginalName: string | null;
+    } | null,
+  ): Promise<{
+    data: {
+      attachmentUrl?: string | null;
+      attachmentPublicId?: string | null;
+      attachmentOriginalName?: string | null;
+    };
+    publicIdToDelete?: string;
+  }> {
+    const urlProvided = data.attachmentUrl !== undefined;
+    const publicIdProvided = data.attachmentPublicId !== undefined;
+
+    if (!urlProvided && !publicIdProvided) {
+      return { data: {} };
+    }
+
+    if (urlProvided !== publicIdProvided) {
+      throw new BadRequestException(
+        'attachmentUrl and attachmentPublicId must be provided together (or both null to remove)',
+      );
+    }
+
+    // Clear attachment
+    if (data.attachmentUrl === null && data.attachmentPublicId === null) {
+      return {
+        data: {
+          attachmentUrl: null,
+          attachmentPublicId: null,
+          attachmentOriginalName: null,
+        },
+        publicIdToDelete: existing?.attachmentPublicId ?? undefined,
+      };
+    }
+
+    const attachmentUrl = String(data.attachmentUrl).trim();
+    const attachmentPublicId = this.sanitizePublicId(
+      String(data.attachmentPublicId),
+    );
+    const attachmentOriginalName = (
+      data.attachmentOriginalName ??
+      existing?.attachmentOriginalName ??
+      'requirement'
+    ).trim();
+
+    if (!attachmentOriginalName) {
+      throw new BadRequestException('attachmentOriginalName is required');
+    }
+
+    const extension = extname(attachmentOriginalName).toLowerCase();
+    if (!ALLOWED_UPLOAD_EXTENSIONS.has(extension)) {
+      throw new BadRequestException(
+        'Requirement attachment must be zip, rar, pdf, or docx',
+      );
+    }
+
+    this.assertRequirementAttachmentUrl(
+      attachmentUrl,
+      attachmentPublicId,
+      courseId,
+    );
+
+    const publicIdToDelete =
+      existing?.attachmentPublicId &&
+      existing.attachmentPublicId !== attachmentPublicId
+        ? existing.attachmentPublicId
+        : undefined;
+
+    return {
+      data: {
+        attachmentUrl,
+        attachmentPublicId,
+        attachmentOriginalName,
+      },
+      publicIdToDelete,
+    };
+  }
+
+  private assertRequirementAttachmentUrl(
+    secureUrl: string,
+    publicId: string,
+    courseId: string,
+  ): void {
+    const folder = this.getProjectRequirementFolder(courseId);
+    const { cloudName } = this.cloudinaryService.getCloudinaryConfig();
+
+    let parsed: URL;
+    try {
+      parsed = new URL(secureUrl);
+    } catch {
+      throw new BadRequestException(`Invalid attachmentUrl: ${secureUrl}`);
+    }
+
+    if (
+      parsed.protocol !== 'https:' ||
+      !parsed.hostname.endsWith('res.cloudinary.com')
+    ) {
+      throw new BadRequestException(
+        'attachmentUrl must be a valid Cloudinary https URL',
+      );
+    }
+
+    if (!parsed.pathname.includes(`/${cloudName}/`)) {
+      throw new BadRequestException(
+        'attachmentUrl does not belong to configured Cloudinary cloud',
+      );
+    }
+
+    if (!publicId.startsWith(`${folder}/`) && publicId !== folder) {
+      throw new BadRequestException(
+        'attachmentPublicId does not belong to the expected project-requirement folder',
+      );
+    }
   }
 
   private sanitizePublicId(input: string): string {
