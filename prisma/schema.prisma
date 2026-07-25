@@ -170,13 +170,17 @@ model CourseTopic {
 }
 
 model CourseProjectRequirement {
-  id             String   @id @default(cuid())
-  courseId       String   @unique
-  title          String
-  description    String?
-  isRequired     Boolean  @default(true)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                       String   @id @default(cuid())
+  courseId                 String   @unique
+  title                    String
+  description              String?
+  isRequired               Boolean  @default(true)
+  /// Optional brief/spec file (pdf/docx/zip/rar) for detailed requirements
+  attachmentUrl            String?
+  attachmentPublicId       String?
+  attachmentOriginalName   String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
 
   course         Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
   submissions    ProjectSubmission[]

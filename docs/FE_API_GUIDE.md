@@ -889,7 +889,7 @@ Rule hoan thanh course:
 | `GET` | `/course/:id/topics?page=1&limit=10` | |
 | `GET` | `/course/:id/progress/me` | Chi tiet progress **1** course |
 | `GET` | `/course/:id/project-submission/me` | |
-| `GET` | `/course/:id/project-requirement` | De bai project (title, description, isRequired). `404` neu chua cau hinh |
+| `GET` | `/course/:id/project-requirement` | De bai project (+ file dinh kem optional). `404` neu chua cau hinh |
 | `POST` | `/course/:id/upload/signature` | Lay signature upload Cloudinary (project file) |
 | `POST` | `/course/:id/project-submission` | Submit metadata file |
 | `PATCH` | `/course/:id/project-submission/:submissionId` | Cap nhat submission |
@@ -1135,14 +1135,20 @@ async function handleProjectUpload(courseId: string, file: File) {
 | `DELETE` | `/course/:id` | Xoa course |
 | `PUT` | `/course/:id/topics` | Cap nhat danh sach topic |
 | `GET` | `/course/:id/project-requirement` | Lay de bai project (admin/learner deu dung duoc) |
-| `PUT` | `/course/:id/project-requirement` | Upsert de bai project |
+| `POST` | `/course/:id/project-requirement/upload/signature` | Admin: signature upload file de bai (pdf/docx/zip/rar, optional) |
+| `PUT` | `/course/:id/project-requirement` | Upsert de bai project (+ file dinh kem optional) |
 | `GET` | `/course/:id/project-submission?status=...&page=1&limit=100` | List submission (array; mac dinh max 100/page) |
 | `PATCH` | `/course/:id/project-submission/:submissionId/review` | Duyet bai nop |
 
 Luu y project requirement:
-- **Truoc day khong co GET** rieng — chi co `PUT`. FE goi `GET /course/:id/project-requirement` se `404`.
-- Workaround cu: `GET /course/:id` (hoac slug) → field `projectRequirement` (co the `null` neu chua upsert).
-- `PUT /course/:id/project-requirement`: `description` bat buoc, khong duoc de trong.
+- `GET /course/:id/project-requirement` — `404` neu chua upsert.
+- `description` (text ngan) **bat buoc**. File dinh kem **optional** — dung de mo ta format / de bai chi tiet (PDF, DOCX, ZIP, RAR).
+- Upload file de bai (admin):
+  1. `POST /course/:id/project-requirement/upload/signature`
+  2. Upload Cloudinary (`resourceType: auto`) vao folder `project-requirements/<courseId>/`
+  3. `PUT /course/:id/project-requirement` kem `attachmentUrl` + `attachmentPublicId` (+ `attachmentOriginalName` khuyen nghi)
+- Bo file: gui `attachmentUrl: null`, `attachmentPublicId: null` trong PUT.
+- Khong gui 2 field attachment → giu file cu.
 - Response GET/PUT:
 
 ```json
@@ -1150,10 +1156,26 @@ Luu y project requirement:
   "id": "...",
   "courseId": "...",
   "title": "Mini project",
-  "description": "Nop zip + README",
+  "description": "Nop zip + README. Chi tiet xem file dinh kem.",
   "isRequired": true,
+  "attachmentUrl": "https://res.cloudinary.com/.../project-requirements/<courseId>/brief.pdf",
+  "attachmentPublicId": "project-requirements/<courseId>/brief",
+  "attachmentOriginalName": "de-bai-project.pdf",
   "createdAt": "...",
   "updatedAt": "..."
+}
+```
+
+**Body `PUT /course/:id/project-requirement`:**
+
+```json
+{
+  "title": "Mini project",
+  "description": "Tom tat yeu cau. Chi tiet trong file.",
+  "isRequired": true,
+  "attachmentUrl": "https://res.cloudinary.com/...",
+  "attachmentPublicId": "project-requirements/<courseId>/brief",
+  "attachmentOriginalName": "de-bai-project.pdf"
 }
 ```
 
