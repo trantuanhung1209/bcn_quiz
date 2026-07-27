@@ -1232,10 +1232,17 @@ export class CourseService {
   }
 
   private mapProjectSubmission(submission: ProjectSubmissionWithFiles) {
-    const relationFilePaths = [...submission.files]
+    const files = [...submission.files]
       .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((file) => file.filePath);
-    const files = [...new Set(relationFilePaths)];
+      .map((file) => ({
+        id: file.id,
+        secureUrl: file.filePath,
+        publicId: file.storageKey,
+        originalName: file.originalName,
+        mimeType: file.mimeType,
+        fileSize: file.fileSize,
+        sortOrder: file.sortOrder,
+      }));
 
     const { files: _files, ...rest } = submission;
 

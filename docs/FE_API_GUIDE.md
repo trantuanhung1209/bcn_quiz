@@ -989,7 +989,23 @@ Upload project su dung direct upload Cloudinary:
 
 **Luu y quan trong:**
 - Moi user chi co 1 submission cho moi course. Neu da submit, dung `PATCH` de cap nhat.
-- Response submission tra ve `files: string[]` (danh sach URL file).
+- Response submission tra ve `files` la mang object (co `originalName`), khong con chi la URL string:
+
+```json
+"files": [
+  {
+    "id": "...",
+    "secureUrl": "https://res.cloudinary.com/.../file.zip",
+    "publicId": "project-submissions/<courseId>/<userId>/file",
+    "originalName": "my_project_v2.zip",
+    "mimeType": "application/zip",
+    "fileSize": 1048576,
+    "sortOrder": 1
+  }
+]
+```
+
+- Khi `POST`/`PATCH`, FE **phai** gui `originalName` (ten file goc) trong moi item `files[]` — backend luu DB va tra lai o GET/response.
 
 Body `POST /course/:id/upload/signature`:
 
@@ -1053,11 +1069,12 @@ Body `PATCH /course/:id/project-submission/:submissionId`:
 Rule `PATCH`:
 - Mac dinh giu nguyen tat ca file cu neu **khong** truyen `files` va `removeFiles`.
 - Neu truyen `files` (co phan tu) **ma khong** truyen `removeFiles` → **replace toan bo** file cu bang danh sach moi.
-- `removeFiles`: URL (`filePath`), `publicId` (`storageKey`), hoac `file.id` can xoa (khop linh hoat ca version Cloudinary).
-- `files`: metadata file moi da upload len Cloudinary.
+- `removeFiles`: co the dung `file.id`, `secureUrl`, hoac `publicId` (lay tu `files[]` trong GET/response).
+- `files`: metadata file moi da upload len Cloudinary (**bat buoc** co `originalName`).
 - Co the vua xoa file cu, vua them file moi trong cung 1 request.
 - Tong so file sau cung phai nam trong khoang `1 → 5`.
 - Chi sua `note` thi file **khong** doi — FE muon doi file phai gui `files` (va/hoac `removeFiles`).
+- Response `files` luon kem `originalName` (ten file luc nop).
 
 **TypeScript snippet (course project upload):**
 
