@@ -805,6 +805,7 @@ export class CourseService {
         targetFileSet.has(file.filePath) ||
         (file.storageKey ? targetFileSet.has(file.storageKey) : false),
     );
+    const deletedFileIds = new Set(filesToDelete.map((file) => file.id));
 
     const finalFileCount = submission.files.length - filesToDelete.length + uploadedFiles.length;
 
@@ -845,8 +846,9 @@ export class CourseService {
             });
           }
 
+          // Exclude by resolved delete ids — removeFiles may be secureUrl/publicId, not file.id
           const keptFiles = submission.files
-            .filter((file) => !targetFileSet.has(file.id))
+            .filter((file) => !deletedFileIds.has(file.id))
             .sort((a, b) => a.sortOrder - b.sortOrder);
 
           for (let index = 0; index < keptFiles.length; index += 1) {
