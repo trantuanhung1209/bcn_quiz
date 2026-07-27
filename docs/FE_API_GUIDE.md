@@ -1052,7 +1052,7 @@ Body `PATCH /course/:id/project-submission/:submissionId`:
 
 Rule `PATCH`:
 - Mac dinh giu nguyen tat ca file cu neu khong truyen `removeFiles`.
-- `removeFiles`: danh sach URL file cu can xoa.
+- `removeFiles`: danh sach URL (`filePath`), `publicId` (`storageKey`), hoac `file.id` can xoa.
 - `files`: metadata file moi da upload len Cloudinary.
 - Co the vua xoa file cu, vua them file moi trong cung 1 request.
 - Tong so file sau cung phai nam trong khoang `1 → 5`.
