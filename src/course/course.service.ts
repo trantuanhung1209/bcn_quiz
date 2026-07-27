@@ -773,41 +773,43 @@ export class CourseService {
     }
 
     const uploadedFiles = data.files ?? [];
+    const removeFilesProvided = Array.isArray(data.removeFiles);
     const removeTargets = this.normalizeRemoveTargets(data.removeFiles);
 
-    const hasFileUpdate = uploadedFiles.length > 0 || removeTargets.length > 0;
+    const hasNewFiles = uploadedFiles.length > 0;
+    // FE often sends only `files` when replacing the submission — treat as full replace.
+    const replaceAllFiles = hasNewFiles && !removeFilesProvided;
+    const hasFileUpdate =
+      hasNewFiles || removeTargets.length > 0 || replaceAllFiles;
     const hasNoteUpdate = typeof data.note !== 'undefined';
 
     if (!hasFileUpdate && !hasNoteUpdate) {
       throw new BadRequestException('Provide files or note to update submission');
     }
 
-    const targetFileSet = new Set(removeTargets);
-    const unresolvedTargets = removeTargets.filter(
-      (target) =>
-        !submission.files.some(
-          (file) =>
-            file.id === target ||
-            file.filePath === target ||
-            (file.storageKey ? file.storageKey === target : false),
-        ),
-    );
+    let filesToDelete = replaceAllFiles
+      ? [...submission.files]
+      : submission.files.filter((file) =>
+          removeTargets.some((target) => this.fileMatchesRemoveTarget(file, target)),
+        );
 
-    if (unresolvedTargets.length > 0) {
-      throw new BadRequestException(
-        `Some files could not be found in this submission: ${unresolvedTargets.join(', ')}`,
+    if (!replaceAllFiles && removeTargets.length > 0) {
+      const unresolvedTargets = removeTargets.filter(
+        (target) =>
+          !submission.files.some((file) => this.fileMatchesRemoveTarget(file, target)),
       );
+
+      if (unresolvedTargets.length > 0) {
+        throw new BadRequestException(
+          `Some files could not be found in this submission: ${unresolvedTargets.join(', ')}`,
+        );
+      }
     }
 
-    const filesToDelete = submission.files.filter(
-      (file) =>
-        targetFileSet.has(file.id) ||
-        targetFileSet.has(file.filePath) ||
-        (file.storageKey ? targetFileSet.has(file.storageKey) : false),
-    );
     const deletedFileIds = new Set(filesToDelete.map((file) => file.id));
 
-    const finalFileCount = submission.files.length - filesToDelete.length + uploadedFiles.length;
+    const finalFileCount =
+      submission.files.length - filesToDelete.length + uploadedFiles.length;
 
     if (finalFileCount === 0) {
       throw new BadRequestException('At least one file is required');
@@ -822,7 +824,7 @@ export class CourseService {
       note: nextNote,
     };
 
-    const uploadedCloudFiles = hasFileUpdate
+    const uploadedCloudFiles = hasNewFiles
       ? this.normalizeAndValidateSubmissionFiles(uploadedFiles, courseId, userId)
       : [];
 
@@ -846,7 +848,6 @@ export class CourseService {
             });
           }
 
-          // Exclude by resolved delete ids — removeFiles may be secureUrl/publicId, not file.id
           const keptFiles = submission.files
             .filter((file) => !deletedFileIds.has(file.id))
             .sort((a, b) => a.sortOrder - b.sortOrder);
@@ -1575,6 +1576,61 @@ export class CourseService {
     }
 
     return [...new Set(rawTargets.map((item) => item.trim()).filter((item) => item.length > 0))];
+  }
+
+  /** Match removeFiles entry against id, secureUrl, publicId, or Cloudinary path variants. */
+  private fileMatchesRemoveTarget(
+    file: { id: string; filePath: string; storageKey: string | null },
+    target: string,
+  ): boolean {
+    const normalizedTarget = this.normalizeCloudinaryRef(target);
+    if (!normalizedTarget) {
+      return false;
+    }
+
+    if (
+      file.id === target.trim() ||
+      this.normalizeCloudinaryRef(file.filePath) === normalizedTarget ||
+      (file.storageKey
+        ? this.normalizeCloudinaryRef(file.storageKey) === normalizedTarget
+        : false)
+    ) {
+      return true;
+    }
+
+    if (file.storageKey) {
+      const key = this.normalizeCloudinaryRef(file.storageKey);
+      if (key && normalizedTarget.includes(key)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private normalizeCloudinaryRef(value: string): string {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return '';
+    }
+
+    try {
+      const url = new URL(trimmed);
+      // /<cloud>/raw/upload/v123/folder/file -> folder/file
+      const parts = url.pathname.split('/').filter(Boolean);
+      const uploadIdx = parts.findIndex((part) => part === 'upload');
+      if (uploadIdx >= 0) {
+        const afterUpload = parts.slice(uploadIdx + 1);
+        const withoutVersion =
+          afterUpload[0] && /^v\d+$/.test(afterUpload[0])
+            ? afterUpload.slice(1)
+            : afterUpload;
+        return decodeURIComponent(withoutVersion.join('/'));
+      }
+      return decodeURIComponent(url.pathname.replace(/^\/+/, ''));
+    } catch {
+      return decodeURIComponent(trimmed.replace(/^\/+/, ''));
+    }
   }
 
   private assertCourseProgressWeights(params: {
