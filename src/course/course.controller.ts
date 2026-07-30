@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   Patch,
   Post,
@@ -79,6 +80,7 @@ export class CourseController {
 
   @Roles('admin')
   @Get(':id/project-submission')
+  @Header('Cache-Control', 'no-store')
   async listProjectSubmissions(
     @Param('id') id: string,
     @Query() query: ListProjectSubmissionsQueryDto,

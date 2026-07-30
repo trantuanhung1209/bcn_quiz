@@ -768,8 +768,11 @@ export class CourseService {
       throw new NotFoundException(`Submission with id '${submissionId}' was not found`);
     }
 
-    if (submission.status !== ProjectSubmissionStatus.PENDING_REVIEW) {
-      throw new BadRequestException('Only pending submissions can be updated');
+    if (
+      submission.status !== ProjectSubmissionStatus.PENDING_REVIEW &&
+      submission.status !== ProjectSubmissionStatus.REJECTED
+    ) {
+      throw new BadRequestException('Only pending or rejected submissions can be updated');
     }
 
     const uploadedFiles = data.files ?? [];
@@ -822,6 +825,13 @@ export class CourseService {
     const nextNote = hasNoteUpdate ? data.note ?? null : submission.note;
     const updateInput: Prisma.ProjectSubmissionUpdateInput = {
       note: nextNote,
+      // Reset to PENDING_REVIEW when resubmitting a rejected submission
+      ...(submission.status === ProjectSubmissionStatus.REJECTED && {
+        status: ProjectSubmissionStatus.PENDING_REVIEW,
+        reviewerId: null,
+        reviewerNote: null,
+        reviewedAt: null,
+      }),
     };
 
     const uploadedCloudFiles = hasNewFiles
@@ -927,8 +937,11 @@ export class CourseService {
       throw new NotFoundException(`Submission with id '${submissionId}' was not found`);
     }
 
-    if (submission.status !== ProjectSubmissionStatus.PENDING_REVIEW) {
-      throw new BadRequestException('Only pending submissions can be deleted');
+    if (
+      submission.status !== ProjectSubmissionStatus.PENDING_REVIEW &&
+      submission.status !== ProjectSubmissionStatus.REJECTED
+    ) {
+      throw new BadRequestException('Only pending or rejected submissions can be deleted');
     }
 
     await this.prisma.projectSubmission.delete({

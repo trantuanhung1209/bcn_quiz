@@ -892,8 +892,8 @@ Rule hoan thanh course:
 | `GET` | `/course/:id/project-requirement` | De bai project (+ file dinh kem optional). `404` neu chua cau hinh |
 | `POST` | `/course/:id/upload/signature` | Lay signature upload Cloudinary (project file) |
 | `POST` | `/course/:id/project-submission` | Submit metadata file |
-| `PATCH` | `/course/:id/project-submission/:submissionId` | Cap nhat submission |
-| `DELETE` | `/course/:id/project-submission/:submissionId` | Xoa submission |
+| `PATCH` | `/course/:id/project-submission/:submissionId` | Cap nhat submission (PENDING\_REVIEW hoac REJECTED) |
+| `DELETE` | `/course/:id/project-submission/:submissionId` | Xoa submission (PENDING\_REVIEW hoac REJECTED) |
 
 #### List my courses (dang lam / da xong)
 
@@ -1067,6 +1067,9 @@ Body `PATCH /course/:id/project-submission/:submissionId`:
 ```
 
 Rule `PATCH`:
+- Cho phep cap nhat khi status la `PENDING_REVIEW` hoac `REJECTED`.
+- Khi cap nhat submission dang `REJECTED` → status tu dong reset ve `PENDING_REVIEW` (nop lai de cham diem).
+- `APPROVED` → **khong** cho cap nhat hoac xoa.
 - Mac dinh giu nguyen tat ca file cu neu **khong** truyen `files` va `removeFiles`.
 - Neu truyen `files` (co phan tu) **ma khong** truyen `removeFiles` → **replace toan bo** file cu bang danh sach moi.
 - `removeFiles`: co the dung `file.id`, `secureUrl`, hoac `publicId` (lay tu `files[]` trong GET/response).
@@ -1075,6 +1078,10 @@ Rule `PATCH`:
 - Tong so file sau cung phai nam trong khoang `1 → 5`.
 - Chi sua `note` thi file **khong** doi — FE muon doi file phai gui `files` (va/hoac `removeFiles`).
 - Response `files` luon kem `originalName` (ten file luc nop).
+
+Rule `DELETE`:
+- Cho phep xoa khi status la `PENDING_REVIEW` hoac `REJECTED`.
+- `APPROVED` → **khong** cho xoa.
 
 **TypeScript snippet (course project upload):**
 
@@ -1374,7 +1381,7 @@ async function createCourseWithImage(
 
 | Code | Nguyen nhan |
 |------|-------------|
-| `400` | Sai DTO, gui field du, `selectedAnswer` khong co `currentQuizId`, `imageUrl` co nhung thieu `imagePublicId` (hoac nguoc lai), project submission het file sau update, submission vuot qua 5 file, `answer` khong khop voi bat ky label nao trong `options` |
+| `400` | Sai DTO, gui field du, `selectedAnswer` khong co `currentQuizId`, `imageUrl` co nhung thieu `imagePublicId` (hoac nguoc lai), project submission het file sau update, submission vuot qua 5 file, `answer` khong khop voi bat ky label nao trong `options`, cap nhat/xoa submission da `APPROVED` |
 | `401/403` | Thieu token, token het han, user truy cap resource khong phai cua minh |
 | `404` | Topic / Quiz / Session / Attempt / Course khong ton tai |
 | `409` | `quizCode` trung trong cung topic, `slug` trung trong cung course, user submit project lan 2 |
@@ -1394,10 +1401,11 @@ async function createCourseWithImage(
    - `GET /progress/me/topic/:topicId`
 5. Khi tat ca topic dat >= 80% → UI hien thi `topicWeight`% course progress (mac dinh 50; vd weight 10 → 10%). `projectProgressPercent` van 0 cho den khi admin duyet.
 6. User nop project: `POST /course/:id/project-submission` (chi nop **chua** cong % project).
-7. Neu can cap nhat bai nop: `PATCH /course/:id/project-submission/:submissionId`.
-8. Sau khi admin approve → refresh `GET /course/:id/progress/me` de thay `projectProgressPercent` = `projectWeight` va `progressPercent` = 100.
-9. Lay chung chi: `GET /certificate/me`.
-10. Tab "Dang hoc" / "Da xong": `GET /course/progress/me?scope=active|completed`.
+7. Neu bi REJECT → user cap nhat bai nop: `PATCH /course/:id/project-submission/:submissionId` → tu dong reset ve `PENDING_REVIEW`.
+8. Neu da APPROVED → khong cho sua/xoa.
+9. Sau khi admin approve → refresh `GET /course/:id/progress/me` de thay `projectProgressPercent` = `projectWeight` va `progressPercent` = 100.
+10. Lay chung chi: `GET /certificate/me`.
+11. Tab "Dang hoc" / "Da xong": `GET /course/progress/me?scope=active|completed`.
 
 > **Luu y:** Khi khoa hoc dat 100% va chung chi duoc cap, backend tu dong ban event `COURSE_COMPLETE` sang he thong Profiles de cap nhat Timeline.
 
