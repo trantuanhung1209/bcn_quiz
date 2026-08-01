@@ -18,5 +18,5 @@ export class ListProjectSubmissionsQueryDto {
   @IsInt()
   @Min(1)
   @Max(100)
-  limit?: number = 100;
+  limit?: number = 10;
 }

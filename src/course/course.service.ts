@@ -966,26 +966,42 @@ export class CourseService {
     await this.ensureCourseExists(courseId);
 
     const page = query.page ?? 1;
-    const limit = query.limit ?? 100;
+    const limit = query.limit ?? 10;
     const skip = (page - 1) * limit;
 
-    const submissions = await this.prisma.projectSubmission.findMany({
-      where: {
-        courseId,
-        ...(query.status ? { status: query.status } : {}),
-      },
-      skip,
-      take: limit,
-      orderBy: {
-        submittedAt: 'desc',
-      },
-      include: {
-        files: true,
-      },
-    });
+    const where = {
+      courseId,
+      ...(query.status ? { status: query.status } : {}),
+    };
 
-    // Keep array response for existing admin FE; page/limit cap unbounded reads.
-    return submissions.map((submission) => this.mapProjectSubmission(submission));
+    const [submissions, total] = await Promise.all([
+      this.prisma.projectSubmission.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: {
+          submittedAt: 'desc',
+        },
+        include: {
+          files: true,
+        },
+      }),
+      this.prisma.projectSubmission.count({ where }),
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(total / limit));
+
+    return {
+      items: submissions.map((submission) => this.mapProjectSubmission(submission)),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrevious: page > 1,
+      },
+    };
   }
 
   async reviewProjectSubmission(
