@@ -358,10 +358,9 @@ export class CourseProgressService {
     const { totalTopics, completedTopicCount, approvedReviewedAt, hasApprovedProject } =
       stats;
 
-    // Use sticky isCompleted only. Accuracy is NOT enough after curriculum reopen
-    // (new quizzes clear isCompleted while historical accuracy may still be high).
+    // If course has no topics, topic milestone is considered satisfied automatically
     const topicMilestoneCompleted =
-      totalTopics > 0 && completedTopicCount === totalTopics;
+      totalTopics === 0 || completedTopicCount === totalTopics;
 
     const requiresProjectApproval = course.hasProject;
     // Course weights (default 50/50). Without project, topics are 100%.
@@ -375,7 +374,7 @@ export class CourseProgressService {
     const topicProgressPercent =
       totalTopics > 0
         ? Math.round((completedTopicCount / totalTopics) * topicWeight)
-        : 0;
+        : topicWeight; // No topics → topic milestone auto-satisfied, full weight earned
     const projectProgressPercent = hasApprovedProject ? projectWeight : 0;
 
     let progressPercent = Math.min(
