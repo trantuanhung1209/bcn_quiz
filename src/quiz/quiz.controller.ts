@@ -14,7 +14,7 @@ import { CreateQuizDto } from './dto/create-quiz.dto';
 import { BulkCreateQuizzesDto } from './dto/bulk-create-quizzes.dto';
 import { CreateUploadSignatureDto } from './dto/create-upload-signature.dto';
 import { UpdateQuizDto } from './dto/update-quiz.dto';
-import { Roles } from 'src/auth/decorators/roles.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 
 @Controller('quiz')
 export class QuizController {
@@ -25,14 +25,15 @@ export class QuizController {
     return this.quizService.getAllQuizzes(query);
   }
 
-  @Get(':id')
-  async getQuizById(@Param('id') id: string) {
-    return this.quizService.getQuizById(id);
-  }
-
+  /** Static segment before `:id` so `/quiz/code/...` is not captured as an id. */
   @Get('code/:code')
   async getQuizByCode(@Param('code') code: string) {
     return this.quizService.getQuizByCode(code);
+  }
+
+  @Get(':id')
+  async getQuizById(@Param('id') id: string) {
+    return this.quizService.getQuizById(id);
   }
 
   @Roles('admin')

@@ -185,16 +185,12 @@ export class TopicService {
     };
   }
 
-  async getQuizzesByTopicSlug(slug: string, query: PaginationQueryDto) {
-    const topic = await this.prisma.topic.findFirst({
-      where: { slug },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true },
-    });
-
-    if (!topic) {
-      throw new NotFoundException(`Topic with slug '${slug}' was not found`);
-    }
+  async getQuizzesByTopicSlug(
+    slug: string,
+    query: PaginationQueryDto,
+    courseId?: string,
+  ) {
+    const topic = await this.resolveTopicBySlug(slug, courseId);
 
     // Topic already resolved by slug — skip duplicate ensureTopicExists round-trip.
     const { items, pagination } = await this.fetchQuizzesPageByTopicId(
@@ -285,24 +281,73 @@ export class TopicService {
     return topic;
   }
 
-  async getTopicBySlug(slug: string) {
-    const topic = await this.prisma.topic.findFirst({
-      where: { slug },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        _count: {
-          select: {
-            quizzes: true,
-          },
-        },
-      },
+  async getTopicBySlug(slug: string, courseId?: string) {
+    const topic = await this.resolveTopicBySlug(slug, courseId, {
+      includeCount: true,
     });
 
-    if (!topic) {
+    return topic;
+  }
+
+  /**
+   * Resolve a topic slug. Prefer `courseId` when the same slug may exist in
+   * multiple courses. Without courseId, ambiguous slugs raise ConflictException.
+   */
+  private async resolveTopicBySlug(
+    slug: string,
+    courseId?: string,
+    options?: { includeCount?: boolean },
+  ) {
+    const include = options?.includeCount
+      ? {
+          _count: {
+            select: {
+              quizzes: true,
+            },
+          },
+        }
+      : undefined;
+
+    if (courseId?.trim()) {
+      const link = await this.prisma.courseTopic.findFirst({
+        where: {
+          courseId,
+          topic: { slug },
+        },
+        select: {
+          topic: {
+            include,
+          },
+        },
+      });
+
+      if (!link?.topic) {
+        throw new NotFoundException(
+          `Topic with slug '${slug}' was not found in course '${courseId}'`,
+        );
+      }
+
+      return link.topic;
+    }
+
+    const matches = await this.prisma.topic.findMany({
+      where: { slug },
+      orderBy: { createdAt: 'desc' },
+      take: 2,
+      include,
+    });
+
+    if (matches.length === 0) {
       throw new NotFoundException(`Topic with slug '${slug}' was not found`);
     }
 
-    return topic;
+    if (matches.length > 1) {
+      throw new ConflictException(
+        `Topic slug '${slug}' exists in multiple courses; pass courseId to disambiguate`,
+      );
+    }
+
+    return matches[0];
   }
 
   async createTopic(data: CreateTopicDto) {

@@ -13,21 +13,39 @@ import { CreateTopicDto } from './dto/create-topic.dto';
 import { UpdateTopicDto } from './dto/update-topic.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { CreateUploadSignatureDto } from './dto/create-upload-signature.dto';
-import { Roles } from 'src/auth/decorators/roles.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
+import {
+  TopicSlugQueryDto,
+  TopicSlugScopeDto,
+} from './dto/topic-slug-query.dto';
 
 @Controller('topic')
 export class TopicController {
   constructor(private readonly topicService: TopicService) {}
 
-  @Get(':id/quizzes')
-  async getQuizzesByTopicId(
-    @Param('id') id: string,
-    @Query() query: PaginationQueryDto,
-  ) {
-    return this.topicService.getQuizzesByTopicId(id, query);
+  @Get()
+  async getAllTopics(@Query() query: PaginationQueryDto) {
+    return this.topicService.getAllTopics(query);
   }
 
-  // Dành cho màn hình admin cập nhật quiz: trả kèm answer/explanation
+  /** Static `slug` segment before `:id` so `/topic/slug/...` is not captured as an id. */
+  @Get('slug/:slug/quizzes')
+  async getQuizzesByTopicSlug(
+    @Param('slug') slug: string,
+    @Query() query: TopicSlugQueryDto,
+  ) {
+    return this.topicService.getQuizzesByTopicSlug(slug, query, query.courseId);
+  }
+
+  @Get('slug/:slug')
+  async getTopicBySlug(
+    @Param('slug') slug: string,
+    @Query() query: TopicSlugScopeDto,
+  ) {
+    return this.topicService.getTopicBySlug(slug, query.courseId);
+  }
+
+  // Admin editor: includes answer/explanation
   @Roles('admin')
   @Get(':id/quizzes/full')
   async getQuizzesWithAnswersByTopicId(
@@ -37,27 +55,17 @@ export class TopicController {
     return this.topicService.getQuizzesWithAnswersByTopicId(id, query);
   }
 
-  @Get('slug/:slug/quizzes')
-  async getQuizzesByTopicSlug(
-    @Param('slug') slug: string,
+  @Get(':id/quizzes')
+  async getQuizzesByTopicId(
+    @Param('id') id: string,
     @Query() query: PaginationQueryDto,
   ) {
-    return this.topicService.getQuizzesByTopicSlug(slug, query);
-  }
-
-  @Get()
-  async getAllTopics(@Query() query: PaginationQueryDto) {
-    return this.topicService.getAllTopics(query);
+    return this.topicService.getQuizzesByTopicId(id, query);
   }
 
   @Get(':id')
   async getTopicById(@Param('id') id: string) {
     return this.topicService.getTopicById(id);
-  }
-
-  @Get('slug/:slug')
-  async getTopicBySlug(@Param('slug') slug: string) {
-    return this.topicService.getTopicBySlug(slug);
   }
 
   @Roles('admin')

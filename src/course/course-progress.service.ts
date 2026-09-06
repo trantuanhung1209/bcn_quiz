@@ -75,8 +75,10 @@ export class CourseProgressService {
   }
 
   /**
-   * Option B: new quizzes invalidate sticky topic completion, then reopen
-   * linked course progress for affected learners.
+   * New quizzes invalidate sticky topic completion only.
+   * Full course % is recomputed lazily on the next progress read via
+   * healStaleTopicCompletions + evaluateCourseProgress — sync fan-out after
+   * bulk import was timing out against remote Postgres.
    */
   async reopenTopicProgressAndCourses(topicId: string): Promise<number> {
     const cleared = await this.prisma.topicProgress.updateMany({
@@ -90,23 +92,11 @@ export class CourseProgressService {
       },
     });
 
-    const links = await this.prisma.courseTopic.findMany({
-      where: { topicId },
-      select: { courseId: true },
-    });
-
-    const courseIds = [...new Set(links.map((item) => item.courseId))];
-    let totalUsers = 0;
-
-    for (const courseId of courseIds) {
-      totalUsers += await this.reevaluateAllUsersForCourse(courseId);
-    }
-
     this.logger.log(
-      `[reopenTopicProgressAndCourses] topicId=${topicId} clearedTopicProgress=${cleared.count} courses=${courseIds.length} userEvals=${totalUsers}`,
+      `[reopenTopicProgressAndCourses] topicId=${topicId} clearedTopicProgress=${cleared.count} deferredCourseReeval=true`,
     );
 
-    return totalUsers;
+    return cleared.count;
   }
 
   async evaluateCourseProgress(
