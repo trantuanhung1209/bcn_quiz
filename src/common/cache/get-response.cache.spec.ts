@@ -12,55 +12,28 @@ describe('GetResponseCache', () => {
     expect(cache.get('c')).toBe(3);
   });
 
-  it('serves soft-stale after fresh TTL and drops after hard TTL', () => {
+  it('drops entries after TTL', () => {
     jest.useFakeTimers();
-    const cache = new GetResponseCache(1_000, 10, 2_000);
+    const cache = new GetResponseCache(1_000, 10);
 
     cache.set('k', { ok: true });
-    expect(cache.lookup('k')).toEqual({ hit: 'fresh', value: { ok: true } });
+    expect(cache.get('k')).toEqual({ ok: true });
 
     jest.advanceTimersByTime(1_001);
-    expect(cache.lookup('k')).toEqual({ hit: 'stale', value: { ok: true } });
-
-    jest.advanceTimersByTime(2_000);
-    expect(cache.lookup('k')).toEqual({ hit: 'miss' });
+    expect(cache.get('k')).toBeUndefined();
 
     jest.useRealTimers();
   });
 
   it('invalidateShared drops only shared:* keys', () => {
     const cache = new GetResponseCache(60_000, 10);
-    cache.set('shared:shared:/topic/1/quizzes/full', { items: [1] });
-    cache.set('shared:shared:/topic?page=1', { quiz_count: 6 });
-    cache.set('user:42:/course/progress/me', { items: [] });
+    cache.set('shared:/quiz', { items: [1] });
+    cache.set('shared:/course', { items: [] });
+    cache.set('other:key', { keep: true });
 
     expect(cache.invalidateShared()).toBe(2);
-    expect(cache.get('shared:shared:/topic/1/quizzes/full')).toBeUndefined();
-    expect(cache.get('user:42:/course/progress/me')).toEqual({ items: [] });
-    expect(cache.size).toBe(1);
-  });
-
-  it('invalidateUser drops only that user\'s keys', () => {
-    const cache = new GetResponseCache(60_000, 10);
-    cache.set('user:42:/progress/me', { a: 1 });
-    cache.set('user:42:/attempt/me', { b: 2 });
-    cache.set('user:99:/progress/me', { c: 3 });
-    cache.set('shared:shared:/quiz', { d: 4 });
-
-    expect(cache.invalidateUser('42')).toBe(2);
-    expect(cache.get('user:42:/progress/me')).toBeUndefined();
-    expect(cache.get('user:99:/progress/me')).toEqual({ c: 3 });
-    expect(cache.get('shared:shared:/quiz')).toEqual({ d: 4 });
-  });
-
-  it('invalidateAllUsers drops every user:* key', () => {
-    const cache = new GetResponseCache(60_000, 10);
-    cache.set('user:42:/progress/me', { a: 1 });
-    cache.set('user:99:/certificate/me', { b: 2 });
-    cache.set('shared:shared:/course', { c: 3 });
-
-    expect(cache.invalidateAllUsers()).toBe(2);
-    expect(cache.get('shared:shared:/course')).toEqual({ c: 3 });
+    expect(cache.get('shared:/quiz')).toBeUndefined();
+    expect(cache.get('other:key')).toEqual({ keep: true });
     expect(cache.size).toBe(1);
   });
 });

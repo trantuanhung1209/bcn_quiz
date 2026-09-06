@@ -1,20 +1,11 @@
 type CacheEntry = {
   value: unknown;
-  /** Soft TTL: after this, entry is stale but still servable. */
-  freshUntil: number;
-  /** Hard TTL: after this, entry is dropped. */
-  staleUntil: number;
+  expiresAt: number;
 };
 
-export type CacheLookup =
-  | { hit: 'fresh'; value: unknown }
-  | { hit: 'stale'; value: unknown }
-  | { hit: 'miss' };
-
 /**
- * Tiny in-memory TTL cache for hot GET responses.
- * Soft-stale window keeps repeat GETs near 0ms server time after first fill.
- * Provided as a singleton so writes can invalidate the same store GETs read.
+ * Tiny in-memory TTL cache for shared catalog GET responses.
+ * Singleton so catalog writes can invalidate the same store GETs read.
  */
 export class GetResponseCache {
   private readonly store = new Map<string, CacheEntry>();
@@ -24,43 +15,23 @@ export class GetResponseCache {
     private readonly maxEntries: number = Number(
       process.env.GET_CACHE_MAX_ENTRIES ?? 500,
     ),
-    /** Extra window after TTL where stale values may still be served. */
-    private readonly staleMs: number = Number(
-      process.env.GET_CACHE_STALE_MS ??
-        Math.max(Number(process.env.GET_CACHE_TTL_MS ?? 20_000), 20_000),
-    ),
   ) {}
 
-  lookup(key: string): CacheLookup {
+  get(key: string): unknown | undefined {
     const entry = this.store.get(key);
     if (!entry) {
-      return { hit: 'miss' };
+      return undefined;
     }
 
-    const now = Date.now();
-    if (now >= entry.staleUntil) {
+    if (Date.now() >= entry.expiresAt) {
       this.store.delete(key);
-      return { hit: 'miss' };
+      return undefined;
     }
 
     // Refresh LRU order.
     this.store.delete(key);
     this.store.set(key, entry);
-
-    if (now < entry.freshUntil) {
-      return { hit: 'fresh', value: entry.value };
-    }
-
-    return { hit: 'stale', value: entry.value };
-  }
-
-  /** Convenience for simple callers/tests. */
-  get(key: string): unknown | undefined {
-    const result = this.lookup(key);
-    if (result.hit === 'miss') {
-      return undefined;
-    }
-    return result.value;
+    return entry.value;
   }
 
   set(key: string, value: unknown): void {
@@ -72,11 +43,9 @@ export class GetResponseCache {
       this.store.delete(key);
     }
 
-    const now = Date.now();
     this.store.set(key, {
       value,
-      freshUntil: now + this.ttlMs,
-      staleUntil: now + this.ttlMs + this.staleMs,
+      expiresAt: Date.now() + this.ttlMs,
     });
 
     while (this.store.size > this.maxEntries) {
@@ -88,20 +57,9 @@ export class GetResponseCache {
     }
   }
 
-  /** Drop every shared catalog entry (quiz / topic / course lists). */
+  /** Drop every shared catalog entry. */
   invalidateShared(): number {
     return this.invalidateWhere((key) => key.startsWith('shared:'));
-  }
-
-  /** Drop GET cache for one authenticated user. */
-  invalidateUser(userId: string): number {
-    const prefix = `user:${userId}:`;
-    return this.invalidateWhere((key) => key.startsWith(prefix));
-  }
-
-  /** Drop every per-user GET cache entry. */
-  invalidateAllUsers(): number {
-    return this.invalidateWhere((key) => key.startsWith('user:'));
   }
 
   invalidateWhere(predicate: (key: string) => boolean): number {

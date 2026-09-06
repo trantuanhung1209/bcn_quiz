@@ -6,7 +6,7 @@ NestJS API for quizzes, topics, courses, attempt sessions, project submissions, 
 
 - NestJS 11 + Prisma 7 (PostgreSQL via `@prisma/adapter-pg`)
 - Auth: Bearer / cookie validated against `PROFILES_API_BASE_URL`
-- Cache: in-memory GET response cache
+- Cache: in-memory auth-token cache + short shared GET catalog cache (`/quiz*`, `/course` list)
 - Logging: Winston (+ optional Loki)
 
 ## Setup
@@ -46,6 +46,16 @@ API listens on `PORT` (required).
 ### Topic slug lookup
 
 `GET /topic/slug/:slug` and `GET /topic/slug/:slug/quizzes` accept optional `?courseId=` because the same slug may exist in more than one course. Without `courseId`, an ambiguous slug returns `409 Conflict`.
+
+### Topic schedule window
+
+Optional `startsAt` / `endsAt` on a Topic control when students may take the exam set (inclusive start, exclusive end). Both `null` = always open (legacy topics). Responses include derived `availability`: `OPEN` | `SCHEDULED` | `CLOSED`.
+
+- Before `startsAt`: start / save / submit are rejected (`TOPIC_NOT_OPEN_YET`).
+- After `endsAt`: no new sessions and no saves (`TOPIC_CLOSED`); **submit** is still allowed for an existing session (same idea as session timer expiry).
+- Session `expiresAt` is `min(now + expiresInMinutes, endsAt)` when `endsAt` is set.
+- Admin can change the window any time via `PUT /topic/:id` (e.g. daily or weekly windows). Recurring RRULE schedules are out of scope.
+- `GET /topic*` and course detail/slug/topics are **not** response-cached (schedule `availability` must stay fresh). Shared catalog cache covers `/quiz*`, `GET /course`, and project-requirement only; quiz/topic/course writes invalidate it.
 
 ## Production notes
 

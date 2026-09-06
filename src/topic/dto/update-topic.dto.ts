@@ -1,4 +1,5 @@
-import { IsOptional, IsString, IsUrl } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsDate, IsOptional, IsString, IsUrl, ValidateIf } from 'class-validator';
 
 export class UpdateTopicDto {
   @IsString()
@@ -16,4 +17,17 @@ export class UpdateTopicDto {
   @IsOptional()
   @IsString()
   imagePublicId?: string;
+
+  /** Pass null to clear the schedule bound. */
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @Type(() => Date)
+  @IsDate()
+  startsAt?: Date | null;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @Type(() => Date)
+  @IsDate()
+  endsAt?: Date | null;
 }

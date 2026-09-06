@@ -12,6 +12,10 @@ import { CreateTopicDto } from './dto/create-topic.dto';
 import { UpdateTopicDto } from './dto/update-topic.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { CreateUploadSignatureDto } from './dto/create-upload-signature.dto';
+import {
+  validateTopicScheduleWindow,
+  withTopicAvailability,
+} from './topic-schedule';
 
 type RawQuiz = {
   id: string;
@@ -216,6 +220,8 @@ export class TopicService {
       slug: string;
       imageUrl: string | null;
       imagePublicId: string | null;
+      startsAt: Date | null;
+      endsAt: Date | null;
       createdAt: Date;
       quiz_count: number;
       total_count: number;
@@ -228,6 +234,8 @@ export class TopicService {
         t.slug,
         t."imageUrl",
         t."imagePublicId",
+        t."startsAt",
+        t."endsAt",
         t."createdAt",
         (
           SELECT COUNT(*)::int FROM quizzes z WHERE z."topicId" = t.id
@@ -242,15 +250,19 @@ export class TopicService {
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     return {
-      items: rows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        slug: row.slug,
-        imageUrl: row.imageUrl,
-        imagePublicId: row.imagePublicId,
-        createdAt: row.createdAt,
-        _count: { quizzes: row.quiz_count },
-      })),
+      items: rows.map((row) =>
+        withTopicAvailability({
+          id: row.id,
+          name: row.name,
+          slug: row.slug,
+          imageUrl: row.imageUrl,
+          imagePublicId: row.imagePublicId,
+          startsAt: row.startsAt,
+          endsAt: row.endsAt,
+          createdAt: row.createdAt,
+          _count: { quizzes: row.quiz_count },
+        }),
+      ),
       pagination: {
         page,
         limit,
@@ -278,7 +290,7 @@ export class TopicService {
       throw new NotFoundException(`Topic with id '${id}' was not found`);
     }
 
-    return topic;
+    return withTopicAvailability(topic);
   }
 
   async getTopicBySlug(slug: string, courseId?: string) {
@@ -286,7 +298,7 @@ export class TopicService {
       includeCount: true,
     });
 
-    return topic;
+    return withTopicAvailability(topic);
   }
 
   /**
@@ -353,6 +365,7 @@ export class TopicService {
   async createTopic(data: CreateTopicDto) {
     await this.ensureSlugUniqueInCourse(data.courseId, data.slug);
     await this.ensureCourseExists(data.courseId);
+    validateTopicScheduleWindow(data.startsAt ?? null, data.endsAt ?? null);
 
     if (data.imageUrl || data.imagePublicId) {
       await this.validateImageFields(data.imageUrl, data.imagePublicId);
@@ -365,6 +378,8 @@ export class TopicService {
           slug: data.slug,
           imageUrl: data.imageUrl ?? null,
           imagePublicId: data.imagePublicId ?? null,
+          startsAt: data.startsAt ?? null,
+          endsAt: data.endsAt ?? null,
         },
       });
 
@@ -389,7 +404,7 @@ export class TopicService {
 
     await this.courseProgressService.reevaluateAllUsersForCourse(data.courseId);
 
-    return topic;
+    return withTopicAvailability(topic);
   }
 
   async updateTopic(id: string, data: UpdateTopicDto) {
@@ -403,27 +418,48 @@ export class TopicService {
       await this.validateImageFields(data.imageUrl, data.imagePublicId);
     }
 
+    const existingSchedule = await this.prisma.topic.findUnique({
+      where: { id },
+      select: {
+        startsAt: true,
+        endsAt: true,
+        imagePublicId: true,
+      },
+    });
+
+    if (!existingSchedule) {
+      throw new NotFoundException(`Topic with id '${id}' was not found`);
+    }
+
+    const nextStartsAt =
+      data.startsAt !== undefined ? data.startsAt : existingSchedule.startsAt;
+    const nextEndsAt =
+      data.endsAt !== undefined ? data.endsAt : existingSchedule.endsAt;
+    validateTopicScheduleWindow(nextStartsAt, nextEndsAt);
+
     // If a new image is provided, delete the old one from Cloudinary
     if (data.imagePublicId) {
-      const existing = await this.prisma.topic.findUnique({
-        where: { id },
-        select: { imagePublicId: true },
-      });
-
-      if (existing?.imagePublicId && existing.imagePublicId !== data.imagePublicId) {
-        await this.deleteCloudinaryImage(existing.imagePublicId);
+      if (
+        existingSchedule.imagePublicId &&
+        existingSchedule.imagePublicId !== data.imagePublicId
+      ) {
+        await this.deleteCloudinaryImage(existingSchedule.imagePublicId);
       }
     }
 
-    return this.prisma.topic.update({
+    const updated = await this.prisma.topic.update({
       where: { id },
       data: {
         ...(data.name !== undefined && { name: data.name }),
         ...(data.slug !== undefined && { slug: data.slug }),
         ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
         ...(data.imagePublicId !== undefined && { imagePublicId: data.imagePublicId }),
+        ...(data.startsAt !== undefined && { startsAt: data.startsAt }),
+        ...(data.endsAt !== undefined && { endsAt: data.endsAt }),
       },
     });
+
+    return withTopicAvailability(updated);
   }
 
   async deleteTopic(id: string) {

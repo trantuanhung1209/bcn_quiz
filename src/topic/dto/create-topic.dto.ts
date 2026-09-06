@@ -1,4 +1,12 @@
-import { IsNotEmpty, IsOptional, IsString, IsUrl } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsDate,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUrl,
+  ValidateIf,
+} from 'class-validator';
 
 export class CreateTopicDto {
   @IsString()
@@ -20,4 +28,16 @@ export class CreateTopicDto {
   @IsOptional()
   @IsString()
   imagePublicId?: string;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @Type(() => Date)
+  @IsDate()
+  startsAt?: Date | null;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @Type(() => Date)
+  @IsDate()
+  endsAt?: Date | null;
 }

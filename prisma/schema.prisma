@@ -15,6 +15,9 @@ model Topic {
   slug           String
   imageUrl       String?
   imagePublicId  String?
+  /// Calendar open window (null = always open). Inclusive start, exclusive end.
+  startsAt       DateTime?
+  endsAt         DateTime?
 
   quizzes    Quiz[]
   attempts   QuizAttempt[]
@@ -26,6 +29,7 @@ model Topic {
 
   @@index([createdAt])
   @@index([slug, createdAt])
+  @@index([startsAt, endsAt])
   @@map("topics")
 }
 

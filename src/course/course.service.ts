@@ -31,6 +31,7 @@ import { UpsertCourseProjectDto } from './dto/upsert-course-project.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CourseProgressService } from './course-progress.service';
 import { CloudinaryService } from '../common/storage/cloudinary.service';
+import { withTopicAvailability } from '../topic/topic-schedule';
 
 const ALLOWED_UPLOAD_EXTENSIONS = new Set(['.zip', '.rar', '.pdf', '.docx']);
 const MAX_PROJECT_FILES = 5;
@@ -190,7 +191,7 @@ export class CourseService {
       throw new NotFoundException(`Course with id '${id}' was not found`);
     }
 
-    return course;
+    return this.withCourseTopicAvailability(course);
   }
 
   async getCourseBySlug(slug: string) {
@@ -213,7 +214,7 @@ export class CourseService {
       throw new NotFoundException(`Course with slug '${slug}' was not found`);
     }
 
-    return course;
+    return this.withCourseTopicAvailability(course);
   }
 
   async getCourseTopics(courseId: string, query: PaginationQueryDto) {
@@ -251,7 +252,10 @@ export class CourseService {
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     return {
-      items,
+      items: items.map((item) => ({
+        ...item,
+        topic: withTopicAvailability(item.topic),
+      })),
       pagination: {
         page,
         limit,
@@ -1526,6 +1530,20 @@ export class CourseService {
         }
       }),
     );
+  }
+
+  private withCourseTopicAvailability<
+    T extends {
+      topics: Array<{ topic: { startsAt: Date | null; endsAt: Date | null } }>;
+    },
+  >(course: T) {
+    return {
+      ...course,
+      topics: course.topics.map((link) => ({
+        ...link,
+        topic: withTopicAvailability(link.topic),
+      })),
+    };
   }
 
   private async ensureCourseExists(courseId: string) {

@@ -14,6 +14,10 @@ import { SessionHistoryQueryDto } from './dto/session-history-query.dto';
 import { StartSessionDto } from './dto/start-session.dto';
 import { SaveSessionDto } from './dto/save-session.dto';
 import { CourseProgressService } from '../course/course-progress.service';
+import {
+  assertTopicWindow,
+  computeSessionExpiresAt,
+} from '../topic/topic-schedule';
 
 @Injectable()
 export class AttemptService {
@@ -30,7 +34,8 @@ export class AttemptService {
     req: ExpressRequest,
   ) {
     const userId = this.extractUserId(req);
-    await this.ensureTopicExists(topicId);
+    const topic = await this.getTopicScheduleOrThrow(topicId);
+    assertTopicWindow(topic, 'start');
 
     const existing = await this.prisma.attemptSession.findFirst({
       where: {
@@ -60,7 +65,7 @@ export class AttemptService {
         answers: {},
         startedAt: now,
         lastSeenAt: now,
-        expiresAt: new Date(now.getTime() + expiresInMinutes * 60_000),
+        expiresAt: computeSessionExpiresAt(now, expiresInMinutes, topic.endsAt),
       },
     });
 
@@ -69,7 +74,8 @@ export class AttemptService {
 
   async resumeTopicSession(topicId: string, req: ExpressRequest) {
     const userId = this.extractUserId(req);
-    await this.ensureTopicExists(topicId);
+    const topic = await this.getTopicScheduleOrThrow(topicId);
+    assertTopicWindow(topic, 'start');
 
     const session = await this.prisma.attemptSession.findFirst({
       where: {
@@ -115,6 +121,9 @@ export class AttemptService {
     if (await this.expireSessionIfNeeded(session.id, session.expiresAt)) {
       throw new BadRequestException('Session has expired');
     }
+
+    const topic = await this.getTopicScheduleOrThrow(session.topicId);
+    assertTopicWindow(topic, 'mutate');
 
     if (dto.currentQuizId) {
       await this.ensureQuizInTopic(dto.currentQuizId, session.topicId);
@@ -170,6 +179,9 @@ export class AttemptService {
     ) {
       throw new BadRequestException('Session is not in progress');
     }
+
+    const topic = await this.getTopicScheduleOrThrow(session.topicId);
+    assertTopicWindow(topic, 'submit');
 
     // Allow submit even if session has expired — answers saved before expiry are still valid
     await this.expireSessionIfNeeded(session.id, session.expiresAt);
@@ -341,6 +353,9 @@ export class AttemptService {
     if (!quiz) {
       throw new NotFoundException(`Quiz with id '${quizId}' was not found`);
     }
+
+    const topic = await this.getTopicScheduleOrThrow(quiz.topicId);
+    assertTopicWindow(topic, 'mutate');
 
     const answerExists = quiz.options.some(
       (option) => option.label === dto.selectedAnswer,
@@ -982,15 +997,29 @@ export class AttemptService {
     return userId;
   }
 
-  private async ensureTopicExists(topicId: string): Promise<void> {
+  private async getTopicScheduleOrThrow(topicId: string): Promise<{
+    id: string;
+    startsAt: Date | null;
+    endsAt: Date | null;
+  }> {
     const topic = await this.prisma.topic.findUnique({
       where: { id: topicId },
-      select: { id: true },
+      select: {
+        id: true,
+        startsAt: true,
+        endsAt: true,
+      },
     });
 
     if (!topic) {
       throw new NotFoundException(`Topic with id '${topicId}' was not found`);
     }
+
+    return topic;
+  }
+
+  private async ensureTopicExists(topicId: string): Promise<void> {
+    await this.getTopicScheduleOrThrow(topicId);
   }
 
   private async ensureQuizInTopic(quizId: string, topicId: string): Promise<void> {
