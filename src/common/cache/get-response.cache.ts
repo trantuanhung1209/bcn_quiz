@@ -93,6 +93,17 @@ export class GetResponseCache {
     return this.invalidateWhere((key) => key.startsWith('shared:'));
   }
 
+  /** Drop GET cache for one authenticated user. */
+  invalidateUser(userId: string): number {
+    const prefix = `user:${userId}:`;
+    return this.invalidateWhere((key) => key.startsWith(prefix));
+  }
+
+  /** Drop every per-user GET cache entry. */
+  invalidateAllUsers(): number {
+    return this.invalidateWhere((key) => key.startsWith('user:'));
+  }
+
   invalidateWhere(predicate: (key: string) => boolean): number {
     let removed = 0;
     for (const key of [...this.store.keys()]) {

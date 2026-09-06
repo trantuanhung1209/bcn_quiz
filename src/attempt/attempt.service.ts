@@ -108,11 +108,12 @@ export class AttemptService {
       throw new ForbiddenException('You do not have access to this session');
     }
 
-    if (
-      session.status !== AttemptSessionStatus.IN_PROGRESS &&
-      session.status !== AttemptSessionStatus.EXPIRED
-    ) {
+    if (session.status !== AttemptSessionStatus.IN_PROGRESS) {
       throw new BadRequestException('Session is not in progress');
+    }
+
+    if (await this.expireSessionIfNeeded(session.id, session.expiresAt)) {
+      throw new BadRequestException('Session has expired');
     }
 
     if (dto.currentQuizId) {
@@ -142,9 +143,6 @@ export class AttemptService {
         currentQuizId: dto.currentQuizId ?? session.currentQuizId,
         answers: mergedAnswers,
         lastSeenAt: now,
-        // Re-extend expiry and restore to IN_PROGRESS if it had expired
-        status: AttemptSessionStatus.IN_PROGRESS,
-        expiresAt: new Date(now.getTime() + 30 * 60_000),
       },
     });
 

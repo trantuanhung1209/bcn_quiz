@@ -38,6 +38,41 @@ const PER_USER_GET_PREFIXES = [
 /** Mutating these prefixes invalidates shared catalog cache. */
 const WRITE_INVALIDATE_PREFIXES = ['/quiz', '/topic', '/course'];
 
+/** Writes that only affect the caller (session, attempts, own progress). */
+function isPersonalWrite(path: string): boolean {
+  return (
+    path.startsWith('/attempt') ||
+    path.startsWith('/progress') ||
+    path.includes('/session') ||
+    path.includes('/attempt')
+  );
+}
+
+function isCatalogWrite(path: string): boolean {
+  if (isPersonalWrite(path)) {
+    return false;
+  }
+
+  if (
+    path.includes('/project-submission') ||
+    path.includes('/progress')
+  ) {
+    return false;
+  }
+
+  return WRITE_INVALIDATE_PREFIXES.some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`),
+  );
+}
+
+function isCrossUserWrite(path: string): boolean {
+  return (
+    isCatalogWrite(path) ||
+    path.includes('/project-submission') ||
+    path.includes('/review')
+  );
+}
+
 @Injectable()
 export class GetCacheInterceptor implements NestInterceptor {
   private readonly browserMaxAgeSec = Math.max(
@@ -62,9 +97,13 @@ export class GetCacheInterceptor implements NestInterceptor {
     const url = request.originalUrl ?? request.url ?? '';
     const pathOnly = url.split('?')[0] ?? url;
 
-    // Writes: after success, drop shared catalog so quiz full / topic counts refresh.
+    // Writes: drop shared catalog and/or per-user progress after mutations.
     if (request.method !== 'GET') {
-      if (!this.shouldInvalidateOnWrite(pathOnly)) {
+      const invalidateShared = isCatalogWrite(pathOnly);
+      const invalidateAllUsers = isCrossUserWrite(pathOnly);
+      const invalidateCurrentUser = isPersonalWrite(pathOnly);
+
+      if (!invalidateShared && !invalidateAllUsers && !invalidateCurrentUser) {
         return next.handle();
       }
 
@@ -73,7 +112,17 @@ export class GetCacheInterceptor implements NestInterceptor {
           next: () => {
             const status = response.statusCode || 200;
             if (status >= 200 && status < 400) {
-              this.cache.invalidateShared();
+              if (invalidateShared) {
+                this.cache.invalidateShared();
+              }
+              if (invalidateAllUsers) {
+                this.cache.invalidateAllUsers();
+              } else if (invalidateCurrentUser) {
+                const userId = this.extractUserId(request.user);
+                if (userId) {
+                  this.cache.invalidateUser(userId);
+                }
+              }
             }
           },
         }),
@@ -99,8 +148,10 @@ export class GetCacheInterceptor implements NestInterceptor {
     const cacheKey = `${scope}:${userId}:${url}`;
     const lookup = this.cache.lookup(cacheKey);
 
-    if (lookup.hit === 'fresh' || lookup.hit === 'stale') {
-      this.setCacheHeaders(response, lookup.hit === 'fresh' ? 'HIT' : 'STALE', scope);
+    // Stale entries must be refetched — serving them without a refresh
+    // left progress/attempt responses wrong until the hard TTL elapsed.
+    if (lookup.hit === 'fresh') {
+      this.setCacheHeaders(response, 'HIT', scope);
       return of(lookup.value);
     }
 
@@ -115,15 +166,9 @@ export class GetCacheInterceptor implements NestInterceptor {
     );
   }
 
-  private shouldInvalidateOnWrite(path: string): boolean {
-    return WRITE_INVALIDATE_PREFIXES.some(
-      (prefix) => path === prefix || path.startsWith(`${prefix}/`),
-    );
-  }
-
   private setCacheHeaders(
     response: Response,
-    state: 'HIT' | 'STALE' | 'MISS' | 'BYPASS',
+    state: 'HIT' | 'MISS' | 'BYPASS',
     scope: 'shared' | 'user' = 'shared',
   ): void {
     response.setHeader('X-Cache', state);

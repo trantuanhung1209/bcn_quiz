@@ -39,4 +39,28 @@ describe('GetResponseCache', () => {
     expect(cache.get('user:42:/course/progress/me')).toEqual({ items: [] });
     expect(cache.size).toBe(1);
   });
+
+  it('invalidateUser drops only that user\'s keys', () => {
+    const cache = new GetResponseCache(60_000, 10);
+    cache.set('user:42:/progress/me', { a: 1 });
+    cache.set('user:42:/attempt/me', { b: 2 });
+    cache.set('user:99:/progress/me', { c: 3 });
+    cache.set('shared:shared:/quiz', { d: 4 });
+
+    expect(cache.invalidateUser('42')).toBe(2);
+    expect(cache.get('user:42:/progress/me')).toBeUndefined();
+    expect(cache.get('user:99:/progress/me')).toEqual({ c: 3 });
+    expect(cache.get('shared:shared:/quiz')).toEqual({ d: 4 });
+  });
+
+  it('invalidateAllUsers drops every user:* key', () => {
+    const cache = new GetResponseCache(60_000, 10);
+    cache.set('user:42:/progress/me', { a: 1 });
+    cache.set('user:99:/certificate/me', { b: 2 });
+    cache.set('shared:shared:/course', { c: 3 });
+
+    expect(cache.invalidateAllUsers()).toBe(2);
+    expect(cache.get('shared:shared:/course')).toEqual({ c: 3 });
+    expect(cache.size).toBe(1);
+  });
 });

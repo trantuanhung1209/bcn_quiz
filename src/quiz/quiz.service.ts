@@ -6,6 +6,8 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CloudinaryService } from '../common/storage/cloudinary.service';
 import { CourseProgressService } from '../course/course-progress.service';
@@ -13,6 +15,7 @@ import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { CreateQuizDto } from './dto/create-quiz.dto';
 import { BulkCreateQuizzesDto } from './dto/bulk-create-quizzes.dto';
 import { CreateUploadSignatureDto } from './dto/create-upload-signature.dto';
+import { UpdateQuizDto } from './dto/update-quiz.dto';
 
 type RawQuiz = {
   id: string;
@@ -482,52 +485,67 @@ export class QuizService {
       };
     });
 
-    // Interactive transaction với timeout dài hơn mặc định 5s (bulk tới 200 quiz + options)
-    const createdQuizzes = await this.prisma.$transaction(
-      async (tx) => {
-        const created = [];
-
-        for (const input of resolved) {
-          const quiz = await tx.quiz.create({
-            data: {
-              quizCode: input.quizCode,
-              question: input.question,
-              code: input.code,
-              explanation: input.explanation,
-              answer: input.answer,
-              imageUrl: input.imageUrl,
-              imagePublicId: input.imagePublicId,
-              topicId: input.topicId,
-              options: {
-                create: input.options.map((option: any) => ({
-                  label: option.label,
-                  content: option.content,
-                  isCode: option.isCode ?? false,
-                })),
-              },
-            },
-            include: {
-              topic: true,
-              options: true,
-            },
-          });
-
-          if (!quiz) {
-            throw new InternalServerErrorException(
-              `Failed to create quiz at quizzes[${input.index}]`,
-            );
-          }
-
-          created.push(quiz);
-        }
-
-        return created;
-      },
-      {
-        maxWait: 20_000,
-        timeout: 120_000,
-      },
+    const now = new Date();
+    const quizRows = resolved.map((input) => ({
+      id: randomUUID(),
+      quizCode: input.quizCode as string,
+      question: input.question,
+      code: input.code,
+      explanation: input.explanation,
+      answer: input.answer,
+      imageUrl: input.imageUrl,
+      imagePublicId: input.imagePublicId,
+      topicId: input.topicId,
+      createdAt: now,
+      updatedAt: now,
+    }));
+    const optionRows = resolved.flatMap((input, index) =>
+      input.options.map((option: { label: string; content: unknown; isCode?: boolean }) => ({
+        id: randomUUID(),
+        quizId: quizRows[index].id,
+        label: option.label,
+        content: String(option.content ?? ''),
+        isCode: option.isCode ?? false,
+      })),
     );
+
+    try {
+      await this.prisma.$transaction([
+        this.prisma.quiz.createMany({ data: quizRows }),
+        this.prisma.option.createMany({ data: optionRows }),
+      ]);
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException(
+          'A quizCode in this batch already exists in its topic',
+        );
+      }
+      throw error;
+    }
+
+    const createdById = new Map(
+      (
+        await this.prisma.quiz.findMany({
+          where: { id: { in: quizRows.map((row) => row.id) } },
+          include: {
+            topic: true,
+            options: true,
+          },
+        })
+      ).map((quiz) => [quiz.id, quiz]),
+    );
+    const createdQuizzes = quizRows.map((row) => {
+      const quiz = createdById.get(row.id);
+      if (!quiz) {
+        throw new InternalServerErrorException(
+          `Failed to load created quiz '${row.quizCode}'`,
+        );
+      }
+      return quiz;
+    });
 
     const affectedTopicIds = [
       ...new Set(createdQuizzes.map((quiz) => quiz.topicId).filter(Boolean)),
@@ -543,7 +561,7 @@ export class QuizService {
     };
   }
 
-  async updateQuiz(id: string, data: any) {
+  async updateQuiz(id: string, data: UpdateQuizDto) {
     const input = normalizeQuizInput(data);
     const optionLabels = input.options.map((o: any) => o.label);
 

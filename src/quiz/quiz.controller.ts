@@ -13,6 +13,7 @@ import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { CreateQuizDto } from './dto/create-quiz.dto';
 import { BulkCreateQuizzesDto } from './dto/bulk-create-quizzes.dto';
 import { CreateUploadSignatureDto } from './dto/create-upload-signature.dto';
+import { UpdateQuizDto } from './dto/update-quiz.dto';
 import { Roles } from 'src/auth/decorators/roles.decorator';
 
 @Controller('quiz')
@@ -54,7 +55,7 @@ export class QuizController {
 
   @Roles('admin')
   @Put(':id')
-  async updateQuiz(@Param('id') id: string, @Body() data: any) {
+  async updateQuiz(@Param('id') id: string, @Body() data: UpdateQuizDto) {
     return this.quizService.updateQuiz(id, data);
   }
 

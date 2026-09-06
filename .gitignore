@@ -46,6 +46,9 @@ lerna-debug.log*
 .temp
 .tmp
 
+# Docker local volumes (postgres / pgadmin)
+/data
+
 # Runtime data
 pids
 *.pid

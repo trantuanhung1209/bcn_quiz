@@ -41,6 +41,10 @@ export class PrismaService
     super({
       adapter,
       log: [{ emit: 'event', level: 'query' }],
+      transactionOptions: {
+        maxWait: Number(process.env.PRISMA_TX_MAX_WAIT_MS ?? 10_000),
+        timeout: Number(process.env.PRISMA_TX_TIMEOUT_MS ?? 20_000),
+      },
     });
 
     this.pool = pool;
