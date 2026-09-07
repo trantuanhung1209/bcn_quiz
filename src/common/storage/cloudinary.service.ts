@@ -40,21 +40,24 @@ export class CloudinaryService {
   private readonly cloudName: string;
   private readonly apiKey: string;
   private readonly apiSecret: string;
+  private readonly configured: boolean;
 
   constructor() {
-    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-    const apiKey = process.env.CLOUDINARY_API_KEY;
-    const apiSecret = process.env.CLOUDINARY_API_SECRET;
-
-    if (!cloudName || !apiKey || !apiSecret) {
-      throw new InternalServerErrorException(
-        'Cloudinary is not configured. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.',
-      );
-    }
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME?.trim() ?? '';
+    const apiKey = process.env.CLOUDINARY_API_KEY?.trim() ?? '';
+    const apiSecret = process.env.CLOUDINARY_API_SECRET?.trim() ?? '';
 
     this.cloudName = cloudName;
     this.apiKey = apiKey;
     this.apiSecret = apiSecret;
+    this.configured = Boolean(cloudName && apiKey && apiSecret);
+
+    if (!this.configured) {
+      this.logger.warn(
+        'Cloudinary is not configured (CLOUDINARY_CLOUD_NAME / API_KEY / API_SECRET). Upload endpoints will fail until set.',
+      );
+      return;
+    }
 
     cloudinary.config({
       cloud_name: this.cloudName,
@@ -64,7 +67,16 @@ export class CloudinaryService {
     });
   }
 
+  private ensureConfigured(): void {
+    if (!this.configured) {
+      throw new InternalServerErrorException(
+        'Cloudinary is not configured. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.',
+      );
+    }
+  }
+
   getCloudinaryConfig() {
+    this.ensureConfigured();
     return {
       cloudName: this.cloudName,
       apiKey: this.apiKey,
@@ -111,6 +123,7 @@ export class CloudinaryService {
     /** Include maxBytes in response for image uploads (not signed). */
     includeMaxBytes?: boolean;
   }): CloudinaryUploadSignature {
+    this.ensureConfigured();
     const signingParams: Record<string, string | number> = {
       timestamp: params.timestamp,
       folder: params.folder,
@@ -163,6 +176,7 @@ export class CloudinaryService {
    * Deletes the asset when over limit so oversized files are not left behind.
    */
   async assertImageWithinMaxBytes(publicId: string): Promise<void> {
+    this.ensureConfigured();
     const maxBytes = this.getImageMaxBytes();
     const trimmed = publicId?.trim();
     if (!trimmed) {
@@ -212,6 +226,7 @@ export class CloudinaryService {
     folder: string,
     publicId: string,
   ): Promise<UploadedCloudinaryFile> {
+    this.ensureConfigured();
     if (!file?.buffer || file.buffer.length === 0) {
       throw new BadRequestException('Uploaded file is empty or invalid');
     }
