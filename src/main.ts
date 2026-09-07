@@ -31,20 +31,24 @@ async function bootstrap() {
     .map((origin) => origin.trim())
     .filter(Boolean);
 
+  // React (Vite :5173), Next.js (:3000/:3001), uside.id.vn + extras via CORS_ORIGINS
   const allowedOrigins: (string | RegExp)[] = [
-    /^http:\/\/localhost:\d+$/, // Localhost React/Vite development
-    /^http:\/\/127\.0\.0\.1:\d+$/, // 127.0.0.1 development
-    /^https?:\/\/(.*\.)?uside\.studio$/, // uside.studio and its subdomains
-    ...envOrigins,
-    'https://quizzes-uside-studio.vercel.app', // Vercel deployment
+    /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,
+    /^https?:\/\/(.*\.)?uside\.id\.vn$/,
+    /^https?:\/\/(.*\.)?uside\.studio$/,
+    /^https:\/\/.+\.vercel\.app$/,
     'https://profiles-uside-studio.vercel.app',
-    'https://quizzes.uside.id.vn'
+    'https://quizzes-uside-studio.vercel.app',
+    ...envOrigins,
   ];
 
   app.enableCors({
     origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-      // Cho phép request không có origin (như curl, postman, server-to-server)
-      if (!origin) return callback(null, true);
+      // Cho phép request không có origin (curl, Postman, server-to-server)
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
 
       const isAllowed = allowedOrigins.some((allowedOrigin) =>
         typeof allowedOrigin === 'string'
@@ -55,7 +59,7 @@ async function bootstrap() {
       if (isAllowed) {
         callback(null, true);
       } else {
-        callback(new Error('Cross-Origin Request Blocked'));
+        callback(new Error(`Cross-Origin Request Blocked: ${origin}`));
       }
     },
     credentials: true,
