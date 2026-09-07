@@ -472,10 +472,19 @@ export class TopicService {
       throw new NotFoundException(`Topic with id '${id}' was not found`);
     }
 
+    const linkedCourses = await this.prisma.courseTopic.findMany({
+      where: { topicId: id },
+      select: { courseId: true },
+    });
+
     await this.prisma.topic.delete({ where: { id } });
 
     if (topic.imagePublicId) {
       await this.deleteCloudinaryImage(topic.imagePublicId);
+    }
+
+    for (const link of linkedCourses) {
+      await this.courseProgressService.reevaluateAllUsersForCourse(link.courseId);
     }
 
     return { id, deleted: true };

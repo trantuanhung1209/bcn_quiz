@@ -19,6 +19,19 @@ Tai lieu nay tong hop toan bo API hien co de frontend tich hop nhanh.
 }
 ```
 
+- Response loi (Profiles + Quiz) cung envelope:
+
+```json
+{
+  "statusCode": 400,
+  "message": "Bad Request" ,
+  "error": "Bad Request",
+  "data": null
+}
+```
+
+`message` co the la string hoac mang string (validation).
+
 - Validation dang bat:
   - `whitelist: true`
   - `forbidNonWhitelisted: true`
@@ -58,7 +71,7 @@ Tai lieu nay tong hop toan bo API hien co de frontend tich hop nhanh.
 
 3. **Hieu suat**
    - Toan bo JSON response tu dong nen `gzip`. FE khong can config them.
-   - Backend cache ket qua `GET /auth/me` (Profiles) trong bo nho theo token (~30s, env `AUTH_CACHE_TTL_MS`) de giam latency request protected. FE van nen gui Bearer token nhu binh thuong; khong can doi flow.
+   - Backend cache ket qua `GET /auth/me` (Profiles) tren Redis theo token (env `AUTH_CACHE_TTL_MS`, prefix `bcn:quiz:`) de giam latency request protected. FE van nen gui Bearer token nhu binh thuong; khong can doi flow. Logout se xoa cache key token hien tai.
    - **Shared GET catalog cache** ngan (~20s, `GET_CACHE_TTL_MS`) chi cho `/quiz*`, `GET /course` (list), va `GET /course/:id/project-requirement`. Header `X-Cache: HIT|MISS|BYPASS`. Tat bang `GET_CACHE_ENABLED=false` hoac `?nocache=1`.
    - **Khong cache** topic (schedule), course detail/slug/topics, progress, attempt, certificate, auth response body — tranh stale / leak theo user.
    - Sau POST/PUT/PATCH/DELETE `/quiz|/topic|/course` (tru submission/session), server **invalidate** shared catalog cache.
@@ -554,7 +567,7 @@ TypeScript snippet o Section 3.8 tai su dung duoc — chi doi URL signature sang
 > - **Session submit** (`POST /attempt/session/:sessionId/submit`): response tra ve tong ket **va** `quizResults[]` chua `correctAnswer`, `isCorrect`, `explanation` tung cau ngay lap tuc — FE khong can goi them API de hien thi man hinh ket qua.
 > - **Single quiz submit** (`POST /quiz/:id/attempt`): response tra ve `correctAnswer` va `explanation` ngay lap tuc sau khi nop 1 cau.
 > - **Attempt detail** (`GET /attempt/me/:attemptId`): tra ve `quiz.answer` va `quiz.explanation` cho attempt cu.
-> - **Progress topic** (`GET /progress/me/topic/:topicId`): `quizStats[].correctAnswer` — dung cho man hinh on tap / xem lai lich su.
+> - **Progress topic** (`GET /progress/me/topic/:topicId`): `quizStats[].correctAnswer` **chi co khi quiz da tra loi** (`answered: true`); quiz chua lam → `correctAnswer: null` (khong lo dap an truoc).
 > - **Session history** (`GET /attempt/sessions/me` + `GET /attempt/sessions/me/:sessionId`): lich su **theo tung lan nop bai** (lan 1, lan 2, ...), kem `quizResults` day du.
 
 ### 5.1 Session flow (khuyen nghi cho thi theo topic)
@@ -855,7 +868,7 @@ Tra thong ke chi tiet:
 - `summary.wrongQuizCount`
 - `summary.completionRate`
 - `summary.accuracyByQuiz`
-- `quizStats[]` — chi tiet tung quiz: `answered`, `selectedAnswer`, `correctAnswer`, `isCorrect`
+- `quizStats[]` — chi tiet tung quiz: `answered`, `selectedAnswer`, `correctAnswer` (null neu chua lam), `isCorrect`
 - `recentAttempts[]`
 
 ---
@@ -864,7 +877,7 @@ Tra thong ke chi tiet:
 
 Rule hoan thanh course:
 - `topicWeight` + `projectWeight` (tren Course) quy dinh ty le dong gop vao `progressPercent` (mac dinh 50/50 neu co project; 100/0 neu khong co project).
-- Hoan thanh tat ca topic (moi topic `isCompleted = true`, dat >= 80% accuracy) → `topicProgressPercent` = `topicWeight` (vi du weight 10 → hien 10%). Neu khong co project → 100%.
+- Hoan thanh tat ca topic (moi topic `isCompleted = true` khi **coverage** >= 80%: so quiz dung unique / tong quiz trong topic) → `topicProgressPercent` = `topicWeight` (vi du weight 10 → hien 10%). Neu khong co project → 100%.
 - Phan project (`projectProgressPercent` = `projectWeight`) **chi duoc cong** khi admin **duyet** submission (`APPROVED`) — chi nop file chua duoc tinh %.
 - `progressPercent` = `topicProgressPercent` + `projectProgressPercent` (cap 100 khi COMPLETED).
 - Neu course khong co project requirement: hoan thanh tat ca topic se len 100%.
@@ -1276,7 +1289,26 @@ Luu y project requirement:
 
 `GET /certificate/me`
 
-Chi tra ve chung chi sau khi course dat 100%.
+Chi tra ve chung chi sau khi course dat 100% (can auth).
+
+`GET /certificate/verify/:code` — **Public** (khong can auth)
+
+Xac minh chung chi theo ma. Response (trong `data`):
+
+```json
+{
+  "valid": true,
+  "certificateCode": "CRT-...",
+  "issuedAt": "2026-01-01T00:00:00.000Z",
+  "course": { "id": "...", "name": "...", "slug": "..." }
+}
+```
+
+Khong tra userId / PII. Ma khong ton tai → `404` voi envelope loi:
+
+```json
+{ "statusCode": 404, "message": "Certificate not found", "error": "Not Found", "data": null }
+```
 
 ---
 

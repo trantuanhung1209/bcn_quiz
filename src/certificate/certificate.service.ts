@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { Request as ExpressRequest } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -54,6 +58,53 @@ export class CertificateService {
         slug: row.course_slug,
       },
     }));
+  }
+
+  /**
+   * Public verification by certificate code — no PII beyond course + issue date.
+   */
+  async verifyByCode(code: string) {
+    const normalized = code?.trim();
+    if (!normalized) {
+      throw new NotFoundException('Certificate not found');
+    }
+
+    type VerifyRow = {
+      certificateCode: string;
+      issuedAt: Date;
+      course_id: string;
+      course_name: string;
+      course_slug: string;
+    };
+
+    const rows = await this.prisma.$queryRaw<VerifyRow[]>`
+      SELECT
+        cert."certificateCode",
+        cert."issuedAt",
+        c.id AS course_id,
+        c.name AS course_name,
+        c.slug AS course_slug
+      FROM certificates cert
+      INNER JOIN courses c ON c.id = cert."courseId"
+      WHERE cert."certificateCode" = ${normalized}
+      LIMIT 1
+    `;
+
+    const row = rows[0];
+    if (!row) {
+      throw new NotFoundException('Certificate not found');
+    }
+
+    return {
+      valid: true,
+      certificateCode: row.certificateCode,
+      issuedAt: row.issuedAt,
+      course: {
+        id: row.course_id,
+        name: row.course_name,
+        slug: row.course_slug,
+      },
+    };
   }
 
   extractUserId(req: ExpressRequest): string {

@@ -31,9 +31,9 @@ function mockHttp(
 
 describe('GetCacheInterceptor', () => {
   const cache = {
-    get: jest.fn().mockReturnValue(undefined),
-    set: jest.fn(),
-    invalidateShared: jest.fn(),
+    get: jest.fn().mockResolvedValue(undefined),
+    set: jest.fn().mockResolvedValue(undefined),
+    invalidateShared: jest.fn().mockResolvedValue(0),
   };
 
   let interceptor: GetCacheInterceptor;

@@ -15,8 +15,16 @@ describe('AttemptService', () => {
       update: jest.fn(),
     },
     topic: { findUnique: jest.fn() },
-    quiz: { findFirst: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
+    topicProgress: { findUnique: jest.fn() },
+    quiz: {
+      findFirst: jest.fn(),
+      findUnique: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
+    },
+    quizAttempt: { findMany: jest.fn() },
     $transaction: jest.fn(),
+    $queryRaw: jest.fn(),
   };
 
   const courseProgressService = {
@@ -259,6 +267,8 @@ describe('AttemptService', () => {
               update: jest.fn(),
               upsert: jest.fn(),
             },
+            quiz: { count: jest.fn().mockResolvedValue(2) },
+            $queryRaw: jest.fn().mockResolvedValue([{ count: 1 }]),
           };
           return cb(tx);
         },
@@ -270,6 +280,85 @@ describe('AttemptService', () => {
       expect(result.sessionId).toBe('sess-5');
       expect(result.correctCount).toBe(1);
       expect(prisma.topic.findUnique).toHaveBeenCalled();
+    });
+  });
+
+  describe('getMyTopicProgress answer visibility', () => {
+    it('hides correctAnswer for unanswered quizzes', async () => {
+      prisma.topic.findUnique.mockResolvedValue({
+        id: 'topic-1',
+        name: 'T1',
+        slug: 't1',
+      });
+      prisma.topicProgress.findUnique.mockResolvedValue(null);
+      prisma.quiz.findMany.mockResolvedValue([
+        {
+          id: 'q1',
+          quizCode: 'Q1',
+          question: 'One?',
+          imageUrl: null,
+          answer: '1',
+        },
+        {
+          id: 'q2',
+          quizCode: 'Q2',
+          question: 'Two?',
+          imageUrl: null,
+          answer: '2',
+        },
+      ]);
+      prisma.quizAttempt.findMany
+        .mockResolvedValueOnce([
+          {
+            id: 'a1',
+            quizId: 'q1',
+            selectedAnswer: '1',
+            isCorrect: true,
+            submittedAt: new Date(),
+          },
+        ])
+        .mockResolvedValueOnce([]);
+
+      const result = await service.getMyTopicProgress('topic-1', req);
+
+      expect(result.quizStats).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            quizId: 'q1',
+            answered: true,
+            correctAnswer: '1',
+          }),
+          expect.objectContaining({
+            quizId: 'q2',
+            answered: false,
+            correctAnswer: null,
+          }),
+        ]),
+      );
+    });
+  });
+
+  describe('resumeTopicSession', () => {
+    it('expires overdue in-progress sessions on resume', async () => {
+      const expiredAt = new Date(Date.now() - 5_000);
+      prisma.attemptSession.findFirst.mockResolvedValue({
+        id: 'sess-r',
+        userId: 'user-1',
+        topicId: 'topic-1',
+        status: AttemptSessionStatus.IN_PROGRESS,
+        answers: {},
+        currentQuizId: null,
+        startedAt: new Date(),
+        lastSeenAt: new Date(),
+        expiresAt: expiredAt,
+        submittedAt: null,
+      });
+      prisma.attemptSession.update.mockResolvedValue({});
+
+      const result = await service.resumeTopicSession('topic-1', req);
+
+      expect(result?.status).toBe(AttemptSessionStatus.EXPIRED);
+      expect(prisma.attemptSession.update).toHaveBeenCalled();
     });
   });
 });

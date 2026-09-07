@@ -8,9 +8,15 @@ import { appendBearerTokenAsCookie } from '../auth/auth-header.util';
 @Injectable()
 export class ProfilesService {
   private readonly logger = new Logger(ProfilesService.name);
-  private readonly baseUrl = process.env.PROFILES_API_BASE_URL || 'https://profiles.uside.studio';
+  private readonly baseUrl: string;
 
-  constructor(private readonly httpService: HttpService) {}
+  constructor(private readonly httpService: HttpService) {
+    const base = process.env.PROFILES_API_BASE_URL?.trim();
+    if (!base) {
+      throw new Error('PROFILES_API_BASE_URL environment variable is required');
+    }
+    this.baseUrl = base.replace(/\/$/, '');
+  }
 
   async patchMyMetadata(
     req: ExpressRequest | undefined,

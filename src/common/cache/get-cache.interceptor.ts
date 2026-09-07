@@ -5,8 +5,8 @@ import {
   NestInterceptor,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { Observable, of } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { Observable, from, of } from 'rxjs';
+import { switchMap, tap } from 'rxjs/operators';
 import { GetResponseCache } from './get-response.cache';
 
 /** Catalog prefixes whose mutations invalidate the shared GET cache. */
@@ -79,7 +79,7 @@ export class GetCacheInterceptor implements NestInterceptor {
           next: () => {
             const status = response.statusCode || 200;
             if (status >= 200 && status < 400) {
-              this.cache.invalidateShared();
+              void this.cache.invalidateShared();
             }
           },
         }),
@@ -97,19 +97,23 @@ export class GetCacheInterceptor implements NestInterceptor {
     }
 
     const cacheKey = `shared:${url}`;
-    const cached = this.cache.get(cacheKey);
-    if (cached !== undefined) {
-      this.setCacheHeaders(response, 'HIT');
-      return of(cached);
-    }
 
-    this.setCacheHeaders(response, 'MISS');
-    return next.handle().pipe(
-      tap((body) => {
-        const status = response.statusCode || 200;
-        if (status >= 200 && status < 300) {
-          this.cache.set(cacheKey, body);
+    return from(this.cache.get(cacheKey)).pipe(
+      switchMap((cached) => {
+        if (cached !== undefined) {
+          this.setCacheHeaders(response, 'HIT');
+          return of(cached);
         }
+
+        this.setCacheHeaders(response, 'MISS');
+        return next.handle().pipe(
+          tap((body) => {
+            const status = response.statusCode || 200;
+            if (status >= 200 && status < 300) {
+              void this.cache.set(cacheKey, body);
+            }
+          }),
+        );
       }),
     );
   }

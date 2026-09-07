@@ -3,10 +3,33 @@ import { HttpService } from '@nestjs/axios';
 import { of, throwError } from 'rxjs';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { AuthService } from './auth.service';
+import type { RedisService } from '../redis/redis.service';
+
+function createRedisMock() {
+  const store = new Map<string, string>();
+  return {
+    getJson: jest.fn(async (key: string) => {
+      const raw = store.get(key);
+      return raw == null ? undefined : JSON.parse(raw);
+    }),
+    setJson: jest.fn(async (key: string, value: unknown) => {
+      store.set(key, JSON.stringify(value));
+    }),
+    del: jest.fn(async (...keys: string[]) => {
+      let n = 0;
+      for (const key of keys) {
+        if (store.delete(key)) n += 1;
+      }
+      return n;
+    }),
+    delByPrefix: jest.fn(async () => 0),
+  } as unknown as RedisService;
+}
 
 describe('AuthService.validateToken cache', () => {
   const httpService = {
     get: jest.fn(),
+    post: jest.fn(),
   } as unknown as HttpService;
 
   let service: AuthService;
@@ -14,9 +37,8 @@ describe('AuthService.validateToken cache', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.AUTH_CACHE_TTL_MS = '60000';
-    process.env.AUTH_CACHE_MAX_ENTRIES = '100';
     process.env.PROFILES_API_BASE_URL = 'https://profiles.example.com';
-    service = new AuthService(httpService);
+    service = new AuthService(httpService, createRedisMock());
   });
 
   it('calls profiles /auth/me only once for the same token within TTL', async () => {
@@ -74,7 +96,7 @@ describe('AuthService.validateToken cache', () => {
         headers: {},
       }),
     );
-    (httpService as { post?: jest.Mock }).post = jest.fn().mockReturnValue(
+    (httpService.post as jest.Mock).mockReturnValue(
       of({
         status: 200,
         data: { ok: true },
@@ -82,9 +104,9 @@ describe('AuthService.validateToken cache', () => {
       }),
     );
 
-    await service.validateToken(undefined, undefined, 'Bearer logout-token');
-    await service.logout(undefined, 'Bearer logout-token');
-    await service.validateToken(undefined, undefined, 'Bearer logout-token');
+    await service.validateToken('token-logout', undefined, 'Bearer token-logout');
+    await service.logout(undefined, 'Bearer token-logout');
+    await service.validateToken('token-logout', undefined, 'Bearer token-logout');
 
     expect(httpService.get).toHaveBeenCalledTimes(2);
   });

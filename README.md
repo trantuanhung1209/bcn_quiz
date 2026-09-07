@@ -6,23 +6,26 @@ NestJS API for quizzes, topics, courses, attempt sessions, project submissions, 
 
 - NestJS 11 + Prisma 7 (PostgreSQL via `@prisma/adapter-pg`)
 - Auth: Bearer / cookie validated against `PROFILES_API_BASE_URL`
-- Cache: in-memory auth-token cache + short shared GET catalog cache (`/quiz*`, `/course` list)
+- Cache: Redis (`REDIS_URL` or Sentinel via `REDIS_SENTINELS` + `REDIS_SENTINEL_NAME`) for auth-token + shared GET catalog + Throttler; key prefix `bcn:quiz:`
 - Logging: Winston (+ optional Loki)
 
 ## Setup
 
 ```bash
 cp .env.example .env
-# fill DATABASE_URL, PORT, PROFILES_API_BASE_URL, Cloudinary keys
+# fill DATABASE_URL, PORT, PROFILES_API_BASE_URL, REDIS_URL, Cloudinary keys
 
-docker compose up -d   # local Postgres on :5433 + pgAdmin :5050
+docker compose up -d   # local Postgres :5433, Redis :6379, pgAdmin :5050
+# Optional HA Redis:
+# docker compose -f docker-compose.redis-sentinel.yml up -d
+# then set REDIS_SENTINELS + REDIS_SENTINEL_NAME (see .env.example)
 npm install
 npx prisma migrate deploy
 npm run db:seed        # optional
 npm run start:dev
 ```
 
-API listens on `PORT` (required).
+API listens on `PORT` (required). Redis is required in production (`REDIS_URL` or Sentinel).
 
 ## Scripts
 

@@ -1,21 +1,16 @@
 import { createHash } from 'node:crypto';
-
-type CacheEntry<T> = {
-  value: T;
-  expiresAt: number;
-};
+import type { RedisService } from '../redis/redis.service';
 
 /**
- * In-memory TTL cache with in-flight request coalescing.
+ * Redis TTL cache with in-process in-flight request coalescing.
  * Used to avoid calling Profiles /auth/me on every protected request.
  */
 export class AuthTokenCache<T> {
-  private readonly store = new Map<string, CacheEntry<T>>();
   private readonly inflight = new Map<string, Promise<T>>();
 
   constructor(
+    private readonly redis: RedisService,
     private readonly ttlMs: number,
-    private readonly maxEntries: number,
   ) {}
 
   static hashCredentials(parts: Array<string | undefined>): string {
@@ -26,84 +21,52 @@ export class AuthTokenCache<T> {
     return createHash('sha256').update(material).digest('hex');
   }
 
-  get(key: string): T | undefined {
-    const entry = this.store.get(key);
-    if (!entry) {
-      return undefined;
-    }
-
-    if (Date.now() >= entry.expiresAt) {
-      this.store.delete(key);
-      return undefined;
-    }
-
-    // Refresh insertion order for simple LRU eviction.
-    this.store.delete(key);
-    this.store.set(key, entry);
-    return entry.value;
+  private redisKey(key: string): string {
+    return `auth:me:${key}`;
   }
 
-  set(key: string, value: T): void {
-    if (this.ttlMs <= 0 || this.maxEntries <= 0) {
+  async get(key: string): Promise<T | undefined> {
+    if (this.ttlMs <= 0) {
+      return undefined;
+    }
+    return this.redis.getJson<T>(this.redisKey(key));
+  }
+
+  async set(key: string, value: T): Promise<void> {
+    if (this.ttlMs <= 0) {
       return;
     }
-
-    if (this.store.has(key)) {
-      this.store.delete(key);
-    }
-
-    this.store.set(key, {
-      value,
-      expiresAt: Date.now() + this.ttlMs,
-    });
-
-    this.evictIfNeeded();
+    await this.redis.setJson(this.redisKey(key), value, this.ttlMs);
   }
 
-  delete(key: string): void {
-    this.store.delete(key);
+  async delete(key: string): Promise<void> {
+    await this.redis.del(this.redisKey(key));
   }
 
-  clear(): void {
-    this.store.clear();
+  async clear(): Promise<void> {
     this.inflight.clear();
+    await this.redis.delByPrefix('auth:me:');
   }
 
   async getOrLoad(key: string, loader: () => Promise<T>): Promise<T> {
-    const cached = this.get(key);
-    if (cached !== undefined) {
-      return cached;
-    }
-
     const pending = this.inflight.get(key);
     if (pending) {
       return pending;
     }
 
-    const promise = loader()
-      .then((value) => {
-        this.set(key, value);
-        return value;
-      })
-      .finally(() => {
-        this.inflight.delete(key);
-      });
+    const promise = (async () => {
+      const cached = await this.get(key);
+      if (cached !== undefined) {
+        return cached;
+      }
+      const value = await loader();
+      await this.set(key, value);
+      return value;
+    })().finally(() => {
+      this.inflight.delete(key);
+    });
 
     this.inflight.set(key, promise);
     return promise;
-  }
-
-  get size(): number {
-    return this.store.size;
-  }
-
-  private evictIfNeeded(): void {
-    while (this.store.size > this.maxEntries) {
-      const oldestKey = this.store.keys().next().value;
-      if (oldestKey === undefined) {
-        break;
-      }
-      this.store.delete(oldestKey);
-    }
   }
 }

@@ -1,7 +1,9 @@
 import {
+  BadGatewayException,
   Injectable,
   Logger,
   OnModuleInit,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
@@ -16,17 +18,28 @@ import {
   extractBearerToken,
 } from './auth-header.util';
 import { AuthTokenCache } from './auth-token.cache';
+import { RedisService } from '../redis/redis.service';
 
 @Injectable()
 export class AuthService implements OnModuleInit {
   private readonly logger = new Logger(AuthService.name);
-  private readonly baseUrl = process.env.PROFILES_API_BASE_URL;
-  private readonly tokenCache = new AuthTokenCache<unknown>(
-    Number(process.env.AUTH_CACHE_TTL_MS ?? 60_000),
-    Number(process.env.AUTH_CACHE_MAX_ENTRIES ?? 2_000),
-  );
+  private readonly baseUrl: string;
+  private readonly tokenCache: AuthTokenCache<unknown>;
 
-  constructor(private readonly httpService: HttpService) {}
+  constructor(
+    private readonly httpService: HttpService,
+    redis: RedisService,
+  ) {
+    const base = process.env.PROFILES_API_BASE_URL?.trim();
+    if (!base) {
+      throw new Error('PROFILES_API_BASE_URL environment variable is required');
+    }
+    this.baseUrl = base.replace(/\/$/, '');
+    this.tokenCache = new AuthTokenCache<unknown>(
+      redis,
+      Number(process.env.AUTH_CACHE_TTL_MS ?? 60_000),
+    );
+  }
 
   async onModuleInit(): Promise<void> {
     await this.warmupProfilesConnection();
@@ -281,7 +294,7 @@ export class AuthService implements OnModuleInit {
       `[logout] forward to profiles auth/logout hasCookie=${Boolean(cookies)} hasAuthorization=${Boolean(authorization)}`,
     );
 
-    this.invalidateTokenCache(cookies, authorization);
+    await this.invalidateTokenCache(cookies, authorization);
 
     try {
       const headers: Record<string, string> = {
@@ -373,7 +386,7 @@ export class AuthService implements OnModuleInit {
         return response.data;
       });
     } catch (error) {
-      this.tokenCache.delete(cacheKey);
+      await this.tokenCache.delete(cacheKey);
       this.throwUpstreamAuthError(
         error,
         'validateToken',
@@ -397,17 +410,17 @@ export class AuthService implements OnModuleInit {
     return AuthTokenCache.hashCredentials([authHeader, cookieHeader]);
   }
 
-  private invalidateTokenCache(
+  private async invalidateTokenCache(
     cookies?: string,
     authorization?: string,
-  ): void {
+  ): Promise<void> {
     const bearerToken = extractBearerToken(authorization);
     const cookieToken = this.extractCookieToken(cookies);
     const token = bearerToken ?? cookieToken;
 
     // Delete both the guard-normalized key and the raw header key.
-    this.tokenCache.delete(this.buildCacheKey(token, cookies, authorization));
-    this.tokenCache.delete(
+    await this.tokenCache.delete(this.buildCacheKey(token, cookies, authorization));
+    await this.tokenCache.delete(
       this.buildCacheKey(undefined, cookies, authorization),
     );
   }
@@ -466,10 +479,21 @@ export class AuthService implements OnModuleInit {
     fallbackMessage: string,
   ): never {
     if (error instanceof AxiosError) {
-      const status = error.response?.status ?? 500;
+      const status = error.response?.status;
       const details = this.getUpstreamErrorDetails(error.response?.data);
 
-      this.logger.warn(`[${context}] upstream status=${status} details=${details}`);
+      this.logger.warn(
+        `[${context}] upstream status=${status ?? 'network'} details=${details}`,
+      );
+
+      if (!error.response) {
+        throw new ServiceUnavailableException('Profiles auth service unavailable');
+      }
+
+      if (status !== undefined && status >= 500) {
+        throw new BadGatewayException('Profiles auth service error');
+      }
+
       throw new UnauthorizedException(fallbackMessage);
     }
 

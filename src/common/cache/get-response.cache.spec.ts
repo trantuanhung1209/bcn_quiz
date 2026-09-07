@@ -1,39 +1,64 @@
 import { GetResponseCache } from './get-response.cache';
+import type { RedisService } from '../../redis/redis.service';
+
+function createRedisMock() {
+  const store = new Map<string, string>();
+  return {
+    store,
+    redis: {
+      getJson: jest.fn(async (key: string) => {
+        const raw = store.get(key);
+        return raw == null ? undefined : JSON.parse(raw);
+      }),
+      setJson: jest.fn(async (key: string, value: unknown) => {
+        store.set(key, JSON.stringify(value));
+      }),
+      delByPrefix: jest.fn(async (prefix: string) => {
+        let n = 0;
+        for (const key of [...store.keys()]) {
+          if (key.startsWith(prefix)) {
+            store.delete(key);
+            n += 1;
+          }
+        }
+        return n;
+      }),
+    } as unknown as RedisService,
+  };
+}
 
 describe('GetResponseCache', () => {
-  it('returns values within TTL and evicts oldest', () => {
-    const cache = new GetResponseCache(60_000, 2);
-    cache.set('a', 1);
-    cache.set('b', 2);
-    expect(cache.get('a')).toBe(1);
-    cache.set('c', 3);
-    expect(cache.get('b')).toBeUndefined();
-    expect(cache.get('a')).toBe(1);
-    expect(cache.get('c')).toBe(3);
+  const prevTtl = process.env.GET_CACHE_TTL_MS;
+
+  beforeEach(() => {
+    process.env.GET_CACHE_TTL_MS = '60000';
   });
 
-  it('drops entries after TTL', () => {
-    jest.useFakeTimers();
-    const cache = new GetResponseCache(1_000, 10);
-
-    cache.set('k', { ok: true });
-    expect(cache.get('k')).toEqual({ ok: true });
-
-    jest.advanceTimersByTime(1_001);
-    expect(cache.get('k')).toBeUndefined();
-
-    jest.useRealTimers();
+  afterAll(() => {
+    process.env.GET_CACHE_TTL_MS = prevTtl;
   });
 
-  it('invalidateShared drops only shared:* keys', () => {
-    const cache = new GetResponseCache(60_000, 10);
-    cache.set('shared:/quiz', { items: [1] });
-    cache.set('shared:/course', { items: [] });
-    cache.set('other:key', { keep: true });
+  it('stores and returns JSON values', async () => {
+    const { redis } = createRedisMock();
+    const cache = new GetResponseCache(redis);
+    await cache.set('shared:/quiz', { items: [1] });
+    await expect(cache.get('shared:/quiz')).resolves.toEqual({ items: [1] });
+    expect(redis.setJson).toHaveBeenCalledWith(
+      'get:shared:/quiz',
+      { items: [1] },
+      60_000,
+    );
+  });
 
-    expect(cache.invalidateShared()).toBe(2);
-    expect(cache.get('shared:/quiz')).toBeUndefined();
-    expect(cache.get('other:key')).toEqual({ keep: true });
-    expect(cache.size).toBe(1);
+  it('invalidateShared drops only shared catalog keys', async () => {
+    const { redis, store } = createRedisMock();
+    store.set('get:shared:/quiz', JSON.stringify({ items: [1] }));
+    store.set('get:shared:/course', JSON.stringify({ items: [] }));
+    store.set('get:other:key', JSON.stringify({ keep: true }));
+
+    const cache = new GetResponseCache(redis);
+    await expect(cache.invalidateShared()).resolves.toBe(2);
+    expect(store.has('get:shared:/quiz')).toBe(false);
+    expect(store.has('get:other:key')).toBe(true);
   });
 });

@@ -57,19 +57,39 @@ export class AttemptService {
 
     const expiresInMinutes = dto.expiresInMinutes ?? 30;
     const now = new Date();
-    const session = await this.prisma.attemptSession.create({
-      data: {
-        userId,
-        topicId,
-        status: AttemptSessionStatus.IN_PROGRESS,
-        answers: {},
-        startedAt: now,
-        lastSeenAt: now,
-        expiresAt: computeSessionExpiresAt(now, expiresInMinutes, topic.endsAt),
-      },
-    });
 
-    return this.mapSession(session);
+    try {
+      const session = await this.prisma.attemptSession.create({
+        data: {
+          userId,
+          topicId,
+          status: AttemptSessionStatus.IN_PROGRESS,
+          answers: {},
+          startedAt: now,
+          lastSeenAt: now,
+          expiresAt: computeSessionExpiresAt(now, expiresInMinutes, topic.endsAt),
+        },
+      });
+
+      return this.mapSession(session);
+    } catch (error) {
+      // Concurrent start: return the existing in-progress session if another request won.
+      const raced = await this.prisma.attemptSession.findFirst({
+        where: {
+          userId,
+          topicId,
+          status: AttemptSessionStatus.IN_PROGRESS,
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+      if (raced) {
+        const expired = await this.expireSessionIfNeeded(raced.id, raced.expiresAt);
+        if (!expired) {
+          return this.mapSession(raced);
+        }
+      }
+      throw error;
+    }
   }
 
   async resumeTopicSession(topicId: string, req: ExpressRequest) {
@@ -90,6 +110,14 @@ export class AttemptService {
 
     if (!session) {
       return null;
+    }
+
+    const expired = await this.expireSessionIfNeeded(session.id, session.expiresAt);
+    if (expired) {
+      return this.mapSession({
+        ...session,
+        status: AttemptSessionStatus.EXPIRED,
+      });
     }
 
     return this.mapSession(session);
@@ -937,7 +965,7 @@ export class AttemptService {
         image: quiz.imageUrl ?? null,
         answered: Boolean(attempt),
         selectedAnswer: attempt?.selectedAnswer ?? null,
-        correctAnswer: quiz.answer,
+        correctAnswer: attempt ? quiz.answer : null,
         isCorrect: attempt?.isCorrect ?? null,
         lastSubmittedAt: attempt?.submittedAt ?? null,
       };
@@ -1174,33 +1202,35 @@ export class AttemptService {
       },
     });
 
-    if (!existingProgress) {
-      const totalAttempts = attemptsToAdd;
-      const correctAttempts = correctToAdd;
+    const totalAttempts =
+      (existingProgress?.totalAttempts ?? 0) + attemptsToAdd;
+    const correctAttempts =
+      (existingProgress?.correctAttempts ?? 0) + correctToAdd;
+    const accuracy = totalAttempts > 0 ? correctAttempts / totalAttempts : 0;
 
+    const coverageComplete = await this.isTopicCoverageComplete(
+      tx,
+      userId,
+      topicId,
+    );
+    const isCompleted = Boolean(existingProgress?.isCompleted) || coverageComplete;
+
+    if (!existingProgress) {
       await tx.topicProgress.create({
         data: {
           userId,
           topicId,
           totalAttempts,
           correctAttempts,
-          accuracy: totalAttempts > 0 ? correctAttempts / totalAttempts : 0,
-          isCompleted:
-            totalAttempts > 0 && correctAttempts / totalAttempts >= 0.8,
-          completedAt:
-            totalAttempts > 0 && correctAttempts / totalAttempts >= 0.8
-              ? lastAttemptAt
-              : null,
+          accuracy,
+          isCompleted,
+          completedAt: isCompleted ? lastAttemptAt : null,
           completionThreshold: 0.8,
           lastAttemptAt,
         },
       });
-
       return;
     }
-
-    const totalAttempts = existingProgress.totalAttempts + attemptsToAdd;
-    const correctAttempts = existingProgress.correctAttempts + correctToAdd;
 
     await tx.topicProgress.update({
       where: {
@@ -1212,19 +1242,47 @@ export class AttemptService {
       data: {
         totalAttempts,
         correctAttempts,
-        accuracy: totalAttempts > 0 ? correctAttempts / totalAttempts : 0,
-        isCompleted:
-          existingProgress.isCompleted ||
-          (totalAttempts > 0 && correctAttempts / totalAttempts >= 0.8),
+        accuracy,
+        isCompleted,
         completedAt:
-          existingProgress.isCompleted ||
-          !(totalAttempts > 0 && correctAttempts / totalAttempts >= 0.8)
+          existingProgress.isCompleted || !coverageComplete
             ? existingProgress.completedAt
             : lastAttemptAt,
         completionThreshold: 0.8,
         lastAttemptAt,
       },
     });
+  }
+
+  /**
+   * Topic is complete when unique quizzes with a latest correct attempt
+   * cover at least 80% of quizzes in the topic.
+   */
+  private async isTopicCoverageComplete(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    topicId: string,
+  ): Promise<boolean> {
+    const totalQuizzes = await tx.quiz.count({ where: { topicId } });
+    if (totalQuizzes === 0) {
+      return false;
+    }
+
+    const correctUnique = await tx.$queryRaw<Array<{ count: bigint | number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM (
+        SELECT DISTINCT ON (qa."quizId") qa."isCorrect"
+        FROM quiz_attempts qa
+        INNER JOIN quizzes q ON q.id = qa."quizId"
+        WHERE qa."userId" = ${userId}
+          AND q."topicId" = ${topicId}
+        ORDER BY qa."quizId", qa."submittedAt" DESC
+      ) latest
+      WHERE latest."isCorrect" = true
+    `;
+
+    const correctCount = Number(correctUnique[0]?.count ?? 0);
+    return correctCount / totalQuizzes >= 0.8;
   }
 
   private async safeReevaluateCourseProgressByTopic(
