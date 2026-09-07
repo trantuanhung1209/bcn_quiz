@@ -11,14 +11,17 @@ NestJS API for quizzes, topics, courses, attempt sessions, project submissions, 
 
 ## Setup
 
+Shared infra (1 Postgres with DBs `profiles` + `bcn_quiz`, shared Redis):
+
+```bash
+docker compose up -d
+# optional pgAdmin: docker compose --profile tools up -d
+```
+
 ```bash
 cp .env.example .env
-# fill DATABASE_URL, PORT, PROFILES_API_BASE_URL, REDIS_URL, Cloudinary keys
+# DATABASE_URL=.../bcn_quiz  REDIS_URL=redis://localhost:6379  PROFILES_API_BASE_URL=...
 
-docker compose up -d   # local Postgres :5433, Redis :6379, pgAdmin :5050
-# Optional HA Redis:
-# docker compose -f docker-compose.redis-sentinel.yml up -d
-# then set REDIS_SENTINELS + REDIS_SENTINEL_NAME (see .env.example)
 npm install
 npx prisma migrate deploy
 npm run db:seed        # optional
