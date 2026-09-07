@@ -876,6 +876,8 @@ export class AttemptService {
   async getMyTopicProgress(topicId: string, req: ExpressRequest) {
     const userId = this.extractUserId(req);
 
+    await this.courseProgressService.syncUserTopicCoverage(userId, topicId);
+
     const [topic, progress, quizzesInTopic, attemptsInTopic, recentAttempts] =
       await Promise.all([
       this.prisma.topic.findUnique({

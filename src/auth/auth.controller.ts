@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Logger,
   Post,
   Request,
@@ -28,6 +30,7 @@ export class AuthController {
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('login')
+  @HttpCode(HttpStatus.OK)
   async login(
     @Body() body: LoginDto,
     @Request() req: ExpressRequest,
@@ -50,6 +53,7 @@ export class AuthController {
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('2fa/verify/totp')
+  @HttpCode(HttpStatus.OK)
   async verifyTotp(
     @Body() body: VerifyTotpDto,
     @Request() req: ExpressRequest,
@@ -73,6 +77,7 @@ export class AuthController {
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('2fa/verify/email')
+  @HttpCode(HttpStatus.OK)
   async verifyEmail(
     @Body() body: VerifyEmailDto,
     @Request() req: ExpressRequest,
@@ -96,6 +101,7 @@ export class AuthController {
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('2fa/send-email-otp')
+  @HttpCode(HttpStatus.OK)
   async sendEmailOtp(
     @Body() body: SendEmailOtpDto,
     @Request() req: ExpressRequest,
@@ -119,6 +125,7 @@ export class AuthController {
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('refresh')
+  @HttpCode(HttpStatus.OK)
   async refresh(
     @Request() req: ExpressRequest,
     @Response({ passthrough: true }) res: ExpressResponse,
@@ -139,6 +146,7 @@ export class AuthController {
 
   @Public()
   @Post('logout')
+  @HttpCode(HttpStatus.OK)
   async logout(
     @Request() req: ExpressRequest,
     @Response({ passthrough: true }) res: ExpressResponse,

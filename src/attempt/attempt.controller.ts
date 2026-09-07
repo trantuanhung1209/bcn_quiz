@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Post,
   Query,
@@ -20,6 +22,7 @@ export class AttemptController {
   constructor(private readonly attemptService: AttemptService) {}
 
   @Post('topic/:topicId/session/start')
+  @HttpCode(HttpStatus.OK)
   async startTopicSession(
     @Param('topicId') topicId: string,
     @Body() dto: StartSessionDto,
@@ -37,6 +40,7 @@ export class AttemptController {
   }
 
   @Post('attempt/session/:sessionId/save')
+  @HttpCode(HttpStatus.OK)
   async saveSessionProgress(
     @Param('sessionId') sessionId: string,
     @Body() dto: SaveSessionDto,
@@ -46,6 +50,7 @@ export class AttemptController {
   }
 
   @Post('attempt/session/:sessionId/submit')
+  @HttpCode(HttpStatus.OK)
   async submitSession(
     @Param('sessionId') sessionId: string,
     @Request() req: ExpressRequest,
@@ -54,6 +59,7 @@ export class AttemptController {
   }
 
   @Post('quiz/:id/attempt')
+  @HttpCode(HttpStatus.OK)
   async submitAttempt(
     @Param('id') id: string,
     @Body() dto: SubmitAttemptDto,

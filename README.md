@@ -6,16 +6,19 @@ NestJS API for quizzes, topics, courses, attempt sessions, project submissions, 
 
 - NestJS 11 + Prisma 7 (PostgreSQL via `@prisma/adapter-pg`)
 - Auth: Bearer / cookie validated against `PROFILES_API_BASE_URL`
+- Email OTP / 2FA mail: gửi qua **Profiles** (Resend) — quiz không gửi SMTP trực tiếp
 - Cache: Redis (`REDIS_URL` or Sentinel via `REDIS_SENTINELS` + `REDIS_SENTINEL_NAME`) for auth-token + shared GET catalog + Throttler; key prefix `bcn:quiz:`
 - Logging: Winston (+ optional Loki)
 
 ## Setup
 
-Shared infra (1 Postgres with DBs `profiles` + `bcn_quiz`, shared Redis):
+Shared infra (1 Postgres with DBs `profiles` + `bcn_quiz`, shared Redis) lives in workspace `../infra`:
 
 ```bash
+# from NestJS root, or:
 docker compose up -d
 # optional pgAdmin: docker compose --profile tools up -d
+# details: ../infra/README.md
 ```
 
 ```bash

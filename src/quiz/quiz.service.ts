@@ -630,7 +630,7 @@ export class QuizService {
   async deleteQuiz(id: string) {
     const existing = await this.prisma.quiz.findUnique({
       where: { id },
-      select: { id: true, imagePublicId: true },
+      select: { id: true, topicId: true, imagePublicId: true },
     });
 
     if (!existing) {
@@ -644,6 +644,10 @@ export class QuizService {
     if (existing.imagePublicId) {
       await this.deleteQuizImage(existing.imagePublicId);
     }
+
+    await this.courseProgressService.reevaluateTopicCoverageForAllUsers(
+      existing.topicId,
+    );
 
     return deleted;
   }

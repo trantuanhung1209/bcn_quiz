@@ -160,11 +160,14 @@ const quizzes: SeedQuiz[] = [
 ];
 
 async function upsertTopic(slug: string, name: string) {
-  return prisma.topic.upsert({
-    where: { slug },
-    create: { slug, name },
-    update: { name },
-  } as any);
+  const existing = await prisma.topic.findFirst({ where: { slug } });
+  if (existing) {
+    return prisma.topic.update({
+      where: { id: existing.id },
+      data: { name },
+    });
+  }
+  return prisma.topic.create({ data: { slug, name } });
 }
 
 async function main() {
@@ -186,7 +189,12 @@ async function main() {
     }));
 
     await prisma.quiz.upsert({
-      where: { quizCode: item.id },
+      where: {
+        topicId_quizCode: {
+          topicId: topic.id,
+          quizCode: item.id,
+        },
+      },
       create: {
         quizCode: item.id,
         question: item.content.text,
@@ -203,7 +211,6 @@ async function main() {
         code: item.content.has_code ? item.content.code : null,
         explanation: item.explanation,
         answer: item.answer,
-        topicId: topic.id,
         options: {
           deleteMany: {},
           create: optionCreates as any,

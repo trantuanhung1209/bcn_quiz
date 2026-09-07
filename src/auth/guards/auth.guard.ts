@@ -31,7 +31,7 @@ export class BearerAuthGuard implements CanActivate {
 			return true;
 		}
 
-		const req = context.switchToHttp().getRequest<Request>();
+		const req = context.switchToHttp().getRequest<Request & { user?: unknown }>();
 		const cookieHeader = req.headers.cookie ?? '';
 		const authorization = req.headers.authorization;
 		const bearerToken = extractBearerToken(authorization);
@@ -41,11 +41,11 @@ export class BearerAuthGuard implements CanActivate {
 
 		const authStartedAt = Date.now();
 		try {
-			req.user = (await this.authService.validateToken(
+			req.user = await this.authService.validateToken(
 				token,
 				cookieHeader,
 				authorization,
-			)) as Express.User;
+			);
 
 			RequestContext.recordAuthDuration(Date.now() - authStartedAt);
 			this.logger.debug(

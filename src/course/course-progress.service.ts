@@ -29,6 +29,137 @@ export class CourseProgressService {
     private readonly profilesService: ProfilesService,
   ) {}
 
+  /**
+   * After quizzes are removed (or curriculum shrinks), recompute coverage-based
+   * topic completion for every learner with a progress row, then refresh courses.
+   */
+  async reevaluateTopicCoverageForAllUsers(topicId: string): Promise<number> {
+    const [totalQuizzes, progresses, courseLinks] = await Promise.all([
+      this.prisma.quiz.count({ where: { topicId } }),
+      this.prisma.topicProgress.findMany({
+        where: { topicId },
+        select: { userId: true, isCompleted: true, completedAt: true },
+      }),
+      this.prisma.courseTopic.findMany({
+        where: { topicId },
+        select: { courseId: true },
+      }),
+    ]);
+
+    let updated = 0;
+    const now = new Date();
+
+    for (const progress of progresses) {
+      const coverageComplete =
+        totalQuizzes > 0
+          ? await this.isUserTopicCoverageComplete(
+              progress.userId,
+              topicId,
+              totalQuizzes,
+            )
+          : false;
+
+      if (coverageComplete === progress.isCompleted) {
+        continue;
+      }
+
+      await this.prisma.topicProgress.update({
+        where: {
+          userId_topicId: {
+            userId: progress.userId,
+            topicId,
+          },
+        },
+        data: {
+          isCompleted: coverageComplete,
+          completedAt: coverageComplete
+            ? (progress.completedAt ?? now)
+            : null,
+        },
+      });
+      updated += 1;
+    }
+
+    const courseIds = [...new Set(courseLinks.map((link) => link.courseId))];
+    for (const courseId of courseIds) {
+      await this.reevaluateAllUsersForCourse(courseId);
+    }
+
+    this.logger.log(
+      `[reevaluateTopicCoverageForAllUsers] topicId=${topicId} progresses=${progresses.length} updated=${updated} courses=${courseIds.length}`,
+    );
+
+    return updated;
+  }
+
+  /**
+   * Sync one user's sticky topic completion flag with live quiz coverage.
+   * Used on progress reads so summary and progress.isCompleted stay aligned.
+   */
+  async syncUserTopicCoverage(
+    userId: string,
+    topicId: string,
+  ): Promise<boolean> {
+    const [totalQuizzes, progress] = await Promise.all([
+      this.prisma.quiz.count({ where: { topicId } }),
+      this.prisma.topicProgress.findUnique({
+        where: { userId_topicId: { userId, topicId } },
+        select: { isCompleted: true, completedAt: true },
+      }),
+    ]);
+
+    if (!progress) {
+      return false;
+    }
+
+    const coverageComplete =
+      totalQuizzes > 0
+        ? await this.isUserTopicCoverageComplete(userId, topicId, totalQuizzes)
+        : false;
+
+    if (coverageComplete !== progress.isCompleted) {
+      await this.prisma.topicProgress.update({
+        where: { userId_topicId: { userId, topicId } },
+        data: {
+          isCompleted: coverageComplete,
+          completedAt: coverageComplete
+            ? (progress.completedAt ?? new Date())
+            : null,
+        },
+      });
+    }
+
+    return coverageComplete;
+  }
+
+  private async isUserTopicCoverageComplete(
+    userId: string,
+    topicId: string,
+    totalQuizzes: number,
+  ): Promise<boolean> {
+    if (totalQuizzes <= 0) {
+      return false;
+    }
+
+    const correctUnique = await this.prisma.$queryRaw<
+      Array<{ count: bigint | number }>
+    >`
+      SELECT COUNT(*)::int AS count
+      FROM (
+        SELECT DISTINCT ON (qa."quizId") qa."isCorrect"
+        FROM quiz_attempts qa
+        INNER JOIN quizzes q ON q.id = qa."quizId"
+        WHERE qa."userId" = ${userId}
+          AND q."topicId" = ${topicId}
+        ORDER BY qa."quizId", qa."submittedAt" DESC
+      ) latest
+      WHERE latest."isCorrect" = true
+    `;
+
+    const correctCount = Number(correctUnique[0]?.count ?? 0);
+    return correctCount / totalQuizzes >= 0.8;
+  }
+
   async evaluateCoursesByTopic(
     userId: string,
     topicId: string,
