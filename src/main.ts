@@ -43,7 +43,10 @@ async function bootstrap() {
   ];
 
   app.enableCors({
-    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
       // Cho phép request không có origin (curl, Postman, server-to-server)
       if (!origin) {
         callback(null, true);
@@ -95,4 +98,4 @@ function getRequiredPort(): string {
   return port;
 }
 
-bootstrap();
+void bootstrap();

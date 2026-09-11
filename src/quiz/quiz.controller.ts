@@ -38,7 +38,7 @@ export class QuizController {
 
   @Roles('admin')
   @Post('upload/signature')
-  async createImageUploadSignature(@Body() dto: CreateUploadSignatureDto) {
+  createImageUploadSignature(@Body() dto: CreateUploadSignatureDto) {
     return this.quizService.createImageUploadSignature(dto);
   }
 

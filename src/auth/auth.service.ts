@@ -68,8 +68,7 @@ export class AuthService implements OnModuleInit {
         }),
       );
 
-      const setCookies = (response.headers['set-cookie'] as string[] | undefined) ??
-        [];
+      const setCookies = response.headers['set-cookie'] ?? [];
 
       this.logger.log(
         `[login] success status=${response.status} setCookieCount=${setCookies.length}`,
@@ -107,15 +106,12 @@ export class AuthService implements OnModuleInit {
       }
 
       const response = await firstValueFrom(
-        this.httpService.post(
-          `${this.baseUrl}/auth/2fa/verify/totp`,
-          payload,
-          { headers },
-        ),
+        this.httpService.post(`${this.baseUrl}/auth/2fa/verify/totp`, payload, {
+          headers,
+        }),
       );
 
-      const setCookies =
-        (response.headers['set-cookie'] as string[] | undefined) ?? [];
+      const setCookies = response.headers['set-cookie'] ?? [];
 
       this.logger.log(
         `[verifyTotp] success status=${response.status} setCookieCount=${setCookies.length}`,
@@ -126,7 +122,11 @@ export class AuthService implements OnModuleInit {
         setCookies,
       };
     } catch (error) {
-      this.throwUpstreamAuthError(error, 'verifyTotp', 'TOTP verification failed');
+      this.throwUpstreamAuthError(
+        error,
+        'verifyTotp',
+        'TOTP verification failed',
+      );
     }
   }
 
@@ -160,8 +160,7 @@ export class AuthService implements OnModuleInit {
         ),
       );
 
-      const setCookies =
-        (response.headers['set-cookie'] as string[] | undefined) ?? [];
+      const setCookies = response.headers['set-cookie'] ?? [];
 
       this.logger.log(
         `[verifyEmail] success status=${response.status} setCookieCount=${setCookies.length}`,
@@ -172,7 +171,11 @@ export class AuthService implements OnModuleInit {
         setCookies,
       };
     } catch (error) {
-      this.throwUpstreamAuthError(error, 'verifyEmail', 'Email verification failed');
+      this.throwUpstreamAuthError(
+        error,
+        'verifyEmail',
+        'Email verification failed',
+      );
     }
   }
 
@@ -206,8 +209,7 @@ export class AuthService implements OnModuleInit {
         ),
       );
 
-      const setCookies =
-        (response.headers['set-cookie'] as string[] | undefined) ?? [];
+      const setCookies = response.headers['set-cookie'] ?? [];
 
       this.logger.log(
         `[sendEmailOtp] success status=${response.status} setCookieCount=${setCookies.length}`,
@@ -218,7 +220,11 @@ export class AuthService implements OnModuleInit {
         setCookies,
       };
     } catch (error) {
-      this.throwUpstreamAuthError(error, 'sendEmailOtp', 'Send email OTP failed');
+      this.throwUpstreamAuthError(
+        error,
+        'sendEmailOtp',
+        'Send email OTP failed',
+      );
     }
   }
 
@@ -230,9 +236,12 @@ export class AuthService implements OnModuleInit {
       `[refresh] forward to profiles auth/refresh hasCookie=${Boolean(cookies)} hasAuthorization=${Boolean(authorization)}`,
     );
 
-    const hasRefreshToken = cookies?.toLowerCase().includes('refresh') || authorization;
+    const hasRefreshToken =
+      cookies?.toLowerCase().includes('refresh') || authorization;
     if (!hasRefreshToken) {
-      this.logger.warn('[refresh] Missing refresh token in cookies and authorization header');
+      this.logger.warn(
+        '[refresh] Missing refresh token in cookies and authorization header',
+      );
       throw new UnauthorizedException({
         message: 'No refresh token provided',
         code: 'MISSING_REFRESH_TOKEN',
@@ -262,8 +271,7 @@ export class AuthService implements OnModuleInit {
         ),
       );
 
-      const setCookies =
-        (response.headers['set-cookie'] as string[] | undefined) ?? [];
+      const setCookies = response.headers['set-cookie'] ?? [];
 
       this.logger.log(
         `[refresh] success status=${response.status} setCookieCount=${setCookies.length}`,
@@ -319,8 +327,7 @@ export class AuthService implements OnModuleInit {
         ),
       );
 
-      const setCookies =
-        (response.headers['set-cookie'] as string[] | undefined) ?? [];
+      const setCookies = response.headers['set-cookie'] ?? [];
 
       this.logger.log(
         `[logout] success status=${response.status} setCookieCount=${setCookies.length}`,
@@ -419,7 +426,9 @@ export class AuthService implements OnModuleInit {
     const token = bearerToken ?? cookieToken;
 
     // Delete both the guard-normalized key and the raw header key.
-    await this.tokenCache.delete(this.buildCacheKey(token, cookies, authorization));
+    await this.tokenCache.delete(
+      this.buildCacheKey(token, cookies, authorization),
+    );
     await this.tokenCache.delete(
       this.buildCacheKey(undefined, cookies, authorization),
     );
@@ -487,7 +496,9 @@ export class AuthService implements OnModuleInit {
       );
 
       if (!error.response) {
-        throw new ServiceUnavailableException('Profiles auth service unavailable');
+        throw new ServiceUnavailableException(
+          'Profiles auth service unavailable',
+        );
       }
 
       if (status !== undefined && status >= 500) {

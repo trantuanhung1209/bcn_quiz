@@ -1,5 +1,11 @@
 import { Type } from 'class-transformer';
-import { IsDate, IsOptional, IsString, IsUrl, ValidateIf } from 'class-validator';
+import {
+  IsDate,
+  IsOptional,
+  IsString,
+  IsUrl,
+  ValidateIf,
+} from 'class-validator';
 
 export class UpdateTopicDto {
   @IsString()

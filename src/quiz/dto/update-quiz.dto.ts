@@ -1,4 +1,10 @@
-import { IsDefined, IsNotEmpty, IsObject, IsOptional, IsString } from 'class-validator';
+import {
+  IsDefined,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 /**
  * Accepts the same two payload shapes as create/bulk:

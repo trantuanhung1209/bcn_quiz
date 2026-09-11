@@ -30,7 +30,10 @@ export const RequestContext = {
     return storage.getStore();
   },
 
-  createStore(startedAt = Date.now(), requestId = randomUUID()): RequestContextStore {
+  createStore(
+    startedAt = Date.now(),
+    requestId = randomUUID(),
+  ): RequestContextStore {
     return {
       requestId,
       startedAt,

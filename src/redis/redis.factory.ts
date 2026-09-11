@@ -66,7 +66,9 @@ export function createRedisClient(
   const url = config.get<string>('REDIS_URL')?.trim();
   if (!url) {
     if (isProd) {
-      throw new Error('REDIS_URL (or REDIS_SENTINELS + REDIS_SENTINEL_NAME) is required');
+      throw new Error(
+        'REDIS_URL (or REDIS_SENTINELS + REDIS_SENTINEL_NAME) is required',
+      );
     }
   }
 

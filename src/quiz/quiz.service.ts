@@ -90,7 +90,10 @@ function toRawQuiz(quiz: any): RawQuiz {
     options: {
       is_code: (quiz.options ?? []).some((option: any) => option.isCode),
       data: Object.fromEntries(
-        (quiz.options ?? []).map((option: any) => [option.label, option.content]),
+        (quiz.options ?? []).map((option: any) => [
+          option.label,
+          option.content,
+        ]),
       ),
     },
     answer: quiz.answer,
@@ -233,7 +236,11 @@ export class QuizService {
       code: string | null;
       imageUrl: string | null;
       imagePublicId: string | null;
-      options: Array<{ label: string; content: string; isCode: boolean }> | null;
+      options: Array<{
+        label: string;
+        content: string;
+        isCode: boolean;
+      }> | null;
       total_count: number;
     };
 
@@ -360,7 +367,9 @@ export class QuizService {
       },
     });
 
-    await this.courseProgressService.reopenTopicProgressAndCourses(input.topicId);
+    await this.courseProgressService.reopenTopicProgressAndCourses(
+      input.topicId,
+    );
 
     return mapQuiz(toRawQuiz(quiz));
   }
@@ -500,13 +509,18 @@ export class QuizService {
       updatedAt: now,
     }));
     const optionRows = resolved.flatMap((input, index) =>
-      input.options.map((option: { label: string; content: unknown; isCode?: boolean }) => ({
-        id: randomUUID(),
-        quizId: quizRows[index].id,
-        label: option.label,
-        content: String(option.content ?? ''),
-        isCode: option.isCode ?? false,
-      })),
+      input.options.map(
+        (option: { label: string; content: unknown; isCode?: boolean }) => ({
+          id: randomUUID(),
+          quizId: quizRows[index].id,
+          label: option.label,
+          content:
+            typeof option.content === 'string'
+              ? option.content
+              : (JSON.stringify(option.content ?? '') ?? ''),
+          isCode: option.isCode ?? false,
+        }),
+      ),
     );
 
     try {

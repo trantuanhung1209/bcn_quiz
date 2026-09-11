@@ -48,9 +48,7 @@ export class RequestLoggingMiddleware implements NestMiddleware {
       if (!response.__requestTimingPatched) {
         response.__requestTimingPatched = true;
         const originalWriteHead = response.writeHead.bind(response);
-        response.writeHead = ((
-          ...args: Parameters<Response['writeHead']>
-        ) => {
+        response.writeHead = ((...args: Parameters<Response['writeHead']>) => {
           if (!response.headersSent) {
             response.setHeader(
               'X-Response-Time-Ms',

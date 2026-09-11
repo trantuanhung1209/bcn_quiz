@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { Pool } from 'pg';
@@ -18,7 +23,9 @@ export class PrismaService
     const databaseUrl = process.env.DATABASE_URL;
 
     if (!databaseUrl) {
-      throw new Error('DATABASE_URL is not set. Please define it in your environment (.env).');
+      throw new Error(
+        'DATABASE_URL is not set. Please define it in your environment (.env).',
+      );
     }
 
     const pool = new Pool({
@@ -33,7 +40,9 @@ export class PrismaService
       // Keep remote connections alive longer than default — idle reconnects were
       // showing ~1.2s TLS handshakes in local→remote Postman tests.
       idleTimeoutMillis: Number(process.env.DB_POOL_IDLE_MS ?? 300_000),
-      connectionTimeoutMillis: Number(process.env.DB_POOL_CONNECT_TIMEOUT_MS ?? 10_000),
+      connectionTimeoutMillis: Number(
+        process.env.DB_POOL_CONNECT_TIMEOUT_MS ?? 10_000,
+      ),
       allowExitOnIdle: false,
     });
 

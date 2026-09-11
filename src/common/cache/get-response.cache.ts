@@ -18,7 +18,7 @@ export class GetResponseCache {
     return `get:${key}`;
   }
 
-  async get(key: string): Promise<unknown | undefined> {
+  async get(key: string): Promise<unknown> {
     if (this.ttlMs <= 0) {
       return undefined;
     }

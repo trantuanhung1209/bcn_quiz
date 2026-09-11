@@ -49,7 +49,10 @@ export class AttemptService {
     });
 
     if (existing) {
-      const expired = await this.expireSessionIfNeeded(existing.id, existing.expiresAt);
+      const expired = await this.expireSessionIfNeeded(
+        existing.id,
+        existing.expiresAt,
+      );
       if (!expired) {
         return this.mapSession(existing);
       }
@@ -67,7 +70,11 @@ export class AttemptService {
           answers: {},
           startedAt: now,
           lastSeenAt: now,
-          expiresAt: computeSessionExpiresAt(now, expiresInMinutes, topic.endsAt),
+          expiresAt: computeSessionExpiresAt(
+            now,
+            expiresInMinutes,
+            topic.endsAt,
+          ),
         },
       });
 
@@ -83,7 +90,10 @@ export class AttemptService {
         orderBy: { updatedAt: 'desc' },
       });
       if (raced) {
-        const expired = await this.expireSessionIfNeeded(raced.id, raced.expiresAt);
+        const expired = await this.expireSessionIfNeeded(
+          raced.id,
+          raced.expiresAt,
+        );
         if (!expired) {
           return this.mapSession(raced);
         }
@@ -101,7 +111,9 @@ export class AttemptService {
       where: {
         userId,
         topicId,
-        status: { in: [AttemptSessionStatus.IN_PROGRESS, AttemptSessionStatus.EXPIRED] },
+        status: {
+          in: [AttemptSessionStatus.IN_PROGRESS, AttemptSessionStatus.EXPIRED],
+        },
       },
       orderBy: {
         updatedAt: 'desc',
@@ -112,7 +124,10 @@ export class AttemptService {
       return null;
     }
 
-    const expired = await this.expireSessionIfNeeded(session.id, session.expiresAt);
+    const expired = await this.expireSessionIfNeeded(
+      session.id,
+      session.expiresAt,
+    );
     if (expired) {
       return this.mapSession({
         ...session,
@@ -135,7 +150,9 @@ export class AttemptService {
     });
 
     if (!session) {
-      throw new NotFoundException(`Session with id '${sessionId}' was not found`);
+      throw new NotFoundException(
+        `Session with id '${sessionId}' was not found`,
+      );
     }
 
     if (session.userId !== userId) {
@@ -158,7 +175,9 @@ export class AttemptService {
     }
 
     if (dto.selectedAnswer && !dto.currentQuizId) {
-      throw new BadRequestException('currentQuizId is required when selectedAnswer is provided');
+      throw new BadRequestException(
+        'currentQuizId is required when selectedAnswer is provided',
+      );
     }
 
     const previousAnswers = this.parseAnswers(session.answers);
@@ -194,7 +213,9 @@ export class AttemptService {
     });
 
     if (!session) {
-      throw new NotFoundException(`Session with id '${sessionId}' was not found`);
+      throw new NotFoundException(
+        `Session with id '${sessionId}' was not found`,
+      );
     }
 
     if (session.userId !== userId) {
@@ -253,7 +274,9 @@ export class AttemptService {
           return null;
         }
 
-        const answerExists = quiz.options.some((option) => option.label === selectedAnswer);
+        const answerExists = quiz.options.some(
+          (option) => option.label === selectedAnswer,
+        );
         if (!answerExists) {
           return null;
         }
@@ -268,7 +291,10 @@ export class AttemptService {
           score: isCorrect ? 1 : 0,
           startedAt: session.startedAt,
           submittedAt: new Date(),
-          durationMs: Math.max(0, new Date().getTime() - session.startedAt.getTime()),
+          durationMs: Math.max(
+            0,
+            new Date().getTime() - session.startedAt.getTime(),
+          ),
           // Extra fields for response
           quizCode: quiz.quizCode,
           question: quiz.question,
@@ -286,7 +312,9 @@ export class AttemptService {
 
     // Allow submit with zero answers — score will be 0
     const submittedAt = new Date();
-    const correctCount = attemptPayloads.filter((item) => item.isCorrect).length;
+    const correctCount = attemptPayloads.filter(
+      (item) => item.isCorrect,
+    ).length;
 
     await this.prisma.$transaction(async (tx) => {
       if (attemptPayloads.length > 0) {
@@ -301,7 +329,10 @@ export class AttemptService {
             score: payload.score,
             startedAt: payload.startedAt,
             submittedAt,
-            durationMs: Math.max(0, submittedAt.getTime() - session.startedAt.getTime()),
+            durationMs: Math.max(
+              0,
+              submittedAt.getTime() - session.startedAt.getTime(),
+            ),
           })),
         });
       }
@@ -325,19 +356,22 @@ export class AttemptService {
       });
     });
 
-    await this.safeReevaluateCourseProgressByTopic(userId, session.topicId, req);
+    await this.safeReevaluateCourseProgressByTopic(
+      userId,
+      session.topicId,
+      req,
+    );
 
     // Build a lookup map from the persisted attempts for quick access
-    const attemptByQuizId = new Map(
-      attemptPayloads.map((p) => [p.quizId, p]),
-    );
+    const attemptByQuizId = new Map(attemptPayloads.map((p) => [p.quizId, p]));
 
     return {
       sessionId: session.id,
       topicId: session.topicId,
       attemptedQuizCount: attemptPayloads.length,
       correctCount,
-      score: attemptPayloads.length > 0 ? correctCount / attemptPayloads.length : 0,
+      score:
+        attemptPayloads.length > 0 ? correctCount / attemptPayloads.length : 0,
       submittedAt,
       quizResults: quizzes.map((quiz) => {
         const attempt = attemptByQuizId.get(quiz.id);
@@ -353,7 +387,9 @@ export class AttemptService {
           },
           options: {
             is_code: quiz.options.some((o) => o.isCode),
-            data: Object.fromEntries(quiz.options.map((o) => [o.label, o.content])),
+            data: Object.fromEntries(
+              quiz.options.map((o) => [o.label, o.content]),
+            ),
           },
           selectedAnswer: attempt?.selectedAnswer ?? null,
           correctAnswer: quiz.answer,
@@ -418,7 +454,14 @@ export class AttemptService {
         },
       });
 
-      await this.updateTopicProgress(tx, userId, quiz.topicId, 1, score, submittedAt);
+      await this.updateTopicProgress(
+        tx,
+        userId,
+        quiz.topicId,
+        1,
+        score,
+        submittedAt,
+      );
 
       return attempt;
     });
@@ -577,7 +620,9 @@ export class AttemptService {
     });
 
     if (!attempt) {
-      throw new NotFoundException(`Attempt with id '${attemptId}' was not found`);
+      throw new NotFoundException(
+        `Attempt with id '${attemptId}' was not found`,
+      );
     }
 
     if (attempt.userId !== userId) {
@@ -651,8 +696,11 @@ export class AttemptService {
           submittedAt: session.submittedAt,
           durationMs:
             session.submittedAt != null
-              ? Math.max(0, session.submittedAt.getTime() - session.startedAt.getTime())
-              : session.attempts[0]?.durationMs ?? null,
+              ? Math.max(
+                  0,
+                  session.submittedAt.getTime() - session.startedAt.getTime(),
+                )
+              : (session.attempts[0]?.durationMs ?? null),
           answeredCount,
           correctCount,
           score: answeredCount > 0 ? correctCount / answeredCount : 0,
@@ -669,7 +717,10 @@ export class AttemptService {
         submittedAt: session.submittedAt,
         durationMs:
           session.submittedAt != null
-            ? Math.max(0, session.submittedAt.getTime() - session.startedAt.getTime())
+            ? Math.max(
+                0,
+                session.submittedAt.getTime() - session.startedAt.getTime(),
+              )
             : null,
         answeredCount: legacy?.answeredCount ?? 0,
         correctCount: legacy?.correctCount ?? 0,
@@ -720,7 +771,9 @@ export class AttemptService {
     });
 
     if (!session) {
-      throw new NotFoundException(`Session with id '${sessionId}' was not found`);
+      throw new NotFoundException(
+        `Session with id '${sessionId}' was not found`,
+      );
     }
 
     if (session.userId !== userId) {
@@ -761,14 +814,16 @@ export class AttemptService {
     const quizResults = quizzes.map((quiz) => {
       const linkedAttempt = attemptByQuizId.get(quiz.id);
       const selectedAnswer = useLegacyAnswers
-        ? answers[quiz.id] ?? null
-        : linkedAttempt?.selectedAnswer ?? null;
+        ? (answers[quiz.id] ?? null)
+        : (linkedAttempt?.selectedAnswer ?? null);
 
       let isCorrect: boolean | null = null;
       if (linkedAttempt) {
         isCorrect = linkedAttempt.isCorrect;
       } else if (useLegacyAnswers && selectedAnswer) {
-        const answerExists = quiz.options.some((option) => option.label === selectedAnswer);
+        const answerExists = quiz.options.some(
+          (option) => option.label === selectedAnswer,
+        );
         isCorrect = answerExists ? selectedAnswer === quiz.answer : null;
       }
 
@@ -785,7 +840,9 @@ export class AttemptService {
         },
         options: {
           is_code: quiz.options.some((o) => o.isCode),
-          data: Object.fromEntries(quiz.options.map((o) => [o.label, o.content])),
+          data: Object.fromEntries(
+            quiz.options.map((o) => [o.label, o.content]),
+          ),
         },
         selectedAnswer,
         correctAnswer: quiz.answer,
@@ -794,8 +851,12 @@ export class AttemptService {
       };
     });
 
-    const answeredResults = quizResults.filter((item) => item.selectedAnswer != null);
-    const correctCount = answeredResults.filter((item) => item.isCorrect === true).length;
+    const answeredResults = quizResults.filter(
+      (item) => item.selectedAnswer != null,
+    );
+    const correctCount = answeredResults.filter(
+      (item) => item.isCorrect === true,
+    ).length;
     const answeredCount = answeredResults.length;
 
     return {
@@ -807,7 +868,10 @@ export class AttemptService {
       submittedAt: session.submittedAt,
       durationMs:
         session.submittedAt != null
-          ? Math.max(0, session.submittedAt.getTime() - session.startedAt.getTime())
+          ? Math.max(
+              0,
+              session.submittedAt.getTime() - session.startedAt.getTime(),
+            )
           : null,
       answeredCount,
       correctCount,
@@ -880,74 +944,74 @@ export class AttemptService {
 
     const [topic, progress, quizzesInTopic, attemptsInTopic, recentAttempts] =
       await Promise.all([
-      this.prisma.topic.findUnique({
-        where: { id: topicId },
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-        },
-      }),
-      this.prisma.topicProgress.findUnique({
-        where: {
-          userId_topicId: {
+        this.prisma.topic.findUnique({
+          where: { id: topicId },
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+          },
+        }),
+        this.prisma.topicProgress.findUnique({
+          where: {
+            userId_topicId: {
+              userId,
+              topicId,
+            },
+          },
+        }),
+        this.prisma.quiz.findMany({
+          where: {
+            topicId,
+          },
+          select: {
+            id: true,
+            quizCode: true,
+            question: true,
+            imageUrl: true,
+            answer: true,
+          },
+          orderBy: {
+            createdAt: 'asc',
+          },
+        }),
+        // Latest attempt per quiz only — avoid loading unbounded attempt history.
+        this.prisma.quizAttempt.findMany({
+          where: {
             userId,
             topicId,
           },
-        },
-      }),
-      this.prisma.quiz.findMany({
-        where: {
-          topicId,
-        },
-        select: {
-          id: true,
-          quizCode: true,
-          question: true,
-          imageUrl: true,
-          answer: true,
-        },
-        orderBy: {
-          createdAt: 'asc',
-        },
-      }),
-      // Latest attempt per quiz only — avoid loading unbounded attempt history.
-      this.prisma.quizAttempt.findMany({
-        where: {
-          userId,
-          topicId,
-        },
-        distinct: ['quizId'],
-        select: {
-          id: true,
-          quizId: true,
-          selectedAnswer: true,
-          isCorrect: true,
-          submittedAt: true,
-        },
-        orderBy: [{ quizId: 'asc' }, { submittedAt: 'desc' }],
-      }),
-      this.prisma.quizAttempt.findMany({
-        where: {
-          userId,
-          topicId,
-        },
-        orderBy: {
-          submittedAt: 'desc',
-        },
-        take: 10,
-        include: {
-          quiz: {
-            select: {
-              id: true,
-              quizCode: true,
-              question: true,
-              imageUrl: true,
+          distinct: ['quizId'],
+          select: {
+            id: true,
+            quizId: true,
+            selectedAnswer: true,
+            isCorrect: true,
+            submittedAt: true,
+          },
+          orderBy: [{ quizId: 'asc' }, { submittedAt: 'desc' }],
+        }),
+        this.prisma.quizAttempt.findMany({
+          where: {
+            userId,
+            topicId,
+          },
+          orderBy: {
+            submittedAt: 'desc',
+          },
+          take: 10,
+          include: {
+            quiz: {
+              select: {
+                id: true,
+                quizCode: true,
+                question: true,
+                imageUrl: true,
+              },
             },
           },
-        },
-      }),
-    ]);
+        }),
+      ]);
 
     if (!topic) {
       throw new NotFoundException(`Topic with id '${topicId}' was not found`);
@@ -975,8 +1039,12 @@ export class AttemptService {
 
     const totalQuizCount = quizzesInTopic.length;
     const attemptedQuizCount = quizStats.filter((quiz) => quiz.answered).length;
-    const correctQuizCount = quizStats.filter((quiz) => quiz.isCorrect === true).length;
-    const wrongQuizCount = quizStats.filter((quiz) => quiz.isCorrect === false).length;
+    const correctQuizCount = quizStats.filter(
+      (quiz) => quiz.isCorrect === true,
+    ).length;
+    const wrongQuizCount = quizStats.filter(
+      (quiz) => quiz.isCorrect === false,
+    ).length;
     const unansweredQuizCount = totalQuizCount - attemptedQuizCount;
 
     return {
@@ -1017,7 +1085,8 @@ export class AttemptService {
     ];
 
     const userId = candidates.find(
-      (value): value is string => typeof value === 'string' && value.trim().length > 0,
+      (value): value is string =>
+        typeof value === 'string' && value.trim().length > 0,
     );
 
     if (!userId) {
@@ -1052,7 +1121,10 @@ export class AttemptService {
     await this.getTopicScheduleOrThrow(topicId);
   }
 
-  private async ensureQuizInTopic(quizId: string, topicId: string): Promise<void> {
+  private async ensureQuizInTopic(
+    quizId: string,
+    topicId: string,
+  ): Promise<void> {
     const quiz = await this.prisma.quiz.findFirst({
       where: {
         id: quizId,
@@ -1062,11 +1134,16 @@ export class AttemptService {
     });
 
     if (!quiz) {
-      throw new BadRequestException(`Quiz '${quizId}' does not belong to topic '${topicId}'`);
+      throw new BadRequestException(
+        `Quiz '${quizId}' does not belong to topic '${topicId}'`,
+      );
     }
   }
 
-  private async expireSessionIfNeeded(sessionId: string, expiresAt: Date): Promise<boolean> {
+  private async expireSessionIfNeeded(
+    sessionId: string,
+    expiresAt: Date,
+  ): Promise<boolean> {
     if (expiresAt.getTime() > Date.now()) {
       return false;
     }
@@ -1100,7 +1177,9 @@ export class AttemptService {
       topicId: string;
       answers: Prisma.JsonValue;
     }>,
-  ): Promise<Map<string, { answeredCount: number; correctCount: number; score: number }>> {
+  ): Promise<
+    Map<string, { answeredCount: number; correctCount: number; score: number }>
+  > {
     const result = new Map<
       string,
       { answeredCount: number; correctCount: number; score: number }
@@ -1142,7 +1221,9 @@ export class AttemptService {
           continue;
         }
 
-        const answerExists = quiz.options.some((option) => option.label === selectedAnswer);
+        const answerExists = quiz.options.some(
+          (option) => option.label === selectedAnswer,
+        );
         if (!answerExists) {
           continue;
         }
@@ -1215,7 +1296,8 @@ export class AttemptService {
       userId,
       topicId,
     );
-    const isCompleted = Boolean(existingProgress?.isCompleted) || coverageComplete;
+    const isCompleted =
+      Boolean(existingProgress?.isCompleted) || coverageComplete;
 
     if (!existingProgress) {
       await tx.topicProgress.create({
@@ -1293,8 +1375,12 @@ export class AttemptService {
     req: ExpressRequest,
   ): Promise<void> {
     try {
-      await this.courseProgressService.evaluateCoursesByTopic(userId, topicId, req);
-    } catch (error) {
+      await this.courseProgressService.evaluateCoursesByTopic(
+        userId,
+        topicId,
+        req,
+      );
+    } catch {
       this.logger.warn(
         `[safeReevaluateCourseProgressByTopic] failed userId=${userId} topicId=${topicId}`,
       );

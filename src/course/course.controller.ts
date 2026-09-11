@@ -90,7 +90,7 @@ export class CourseController {
 
   @Roles('admin')
   @Post('upload/image-signature')
-  async createImageUploadSignature(@Body() dto: CreateUploadSignatureDto) {
+  createImageUploadSignature(@Body() dto: CreateUploadSignatureDto) {
     return this.courseService.createImageUploadSignature(dto);
   }
 
@@ -169,7 +169,12 @@ export class CourseController {
     @Body() data: UpdateProjectSubmissionDto,
     @Request() req: ExpressRequest,
   ) {
-    return this.courseService.updateProjectSubmission(id, submissionId, req, data);
+    return this.courseService.updateProjectSubmission(
+      id,
+      submissionId,
+      req,
+      data,
+    );
   }
 
   @Delete(':id/project-submission/:submissionId')
@@ -189,6 +194,11 @@ export class CourseController {
     @Body() data: ReviewProjectSubmissionDto,
     @Request() req: ExpressRequest,
   ) {
-    return this.courseService.reviewProjectSubmission(id, submissionId, data, req);
+    return this.courseService.reviewProjectSubmission(
+      id,
+      submissionId,
+      data,
+      req,
+    );
   }
 }

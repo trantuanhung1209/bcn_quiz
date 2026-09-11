@@ -48,38 +48,46 @@ describe('QuizService.createQuizzes', () => {
     insertedOptions = [];
 
     prisma.topic.findMany.mockResolvedValue([{ id: 'topic-1' }]);
-    prisma.quiz.findMany.mockImplementation(async (args: { where?: { topicId?: string; id?: { in: string[] } } }) => {
-      if (args?.where?.id?.in) {
-        return args.where.id.in.map((id) => {
-          const row = insertedQuizzes.find((quiz) => quiz.id === id) as {
-            id: string;
-            quizCode: string;
-            question: string;
-            code: string | null;
-            explanation: string | null;
-            answer: string;
-            imageUrl: string | null;
-            imagePublicId: string | null;
-            topicId: string;
-          };
-          return {
-            ...row,
-            topic: { id: row.topicId, name: 'Topic', slug: 'topic' },
-            options: insertedOptions.filter((option) => option.quizId === id),
-          };
-        });
-      }
-      return [];
-    });
-    prisma.quiz.createMany.mockImplementation(async ({ data }: { data: Array<Record<string, unknown>> }) => {
-      insertedQuizzes = data;
-      return { count: data.length };
-    });
-    prisma.option.createMany.mockImplementation(async ({ data }: { data: Array<Record<string, unknown>> }) => {
-      insertedOptions = data;
-      return { count: data.length };
-    });
-    prisma.$transaction.mockImplementation(async (ops: Promise<unknown>[]) => Promise.all(ops));
+    prisma.quiz.findMany.mockImplementation(
+      async (args: { where?: { topicId?: string; id?: { in: string[] } } }) => {
+        if (args?.where?.id?.in) {
+          return args.where.id.in.map((id) => {
+            const row = insertedQuizzes.find((quiz) => quiz.id === id) as {
+              id: string;
+              quizCode: string;
+              question: string;
+              code: string | null;
+              explanation: string | null;
+              answer: string;
+              imageUrl: string | null;
+              imagePublicId: string | null;
+              topicId: string;
+            };
+            return {
+              ...row,
+              topic: { id: row.topicId, name: 'Topic', slug: 'topic' },
+              options: insertedOptions.filter((option) => option.quizId === id),
+            };
+          });
+        }
+        return [];
+      },
+    );
+    prisma.quiz.createMany.mockImplementation(
+      async ({ data }: { data: Array<Record<string, unknown>> }) => {
+        insertedQuizzes = data;
+        return { count: data.length };
+      },
+    );
+    prisma.option.createMany.mockImplementation(
+      async ({ data }: { data: Array<Record<string, unknown>> }) => {
+        insertedOptions = data;
+        return { count: data.length };
+      },
+    );
+    prisma.$transaction.mockImplementation(async (ops: Promise<unknown>[]) =>
+      Promise.all(ops),
+    );
     courseProgressService.reopenTopicProgressAndCourses.mockResolvedValue(0);
 
     service = new QuizService(
@@ -108,13 +116,15 @@ describe('QuizService.createQuizzes', () => {
       quizCode: 'q_001',
       answer: 'A',
     });
-    expect(courseProgressService.reopenTopicProgressAndCourses).toHaveBeenCalledWith(
-      'topic-1',
-    );
+    expect(
+      courseProgressService.reopenTopicProgressAndCourses,
+    ).toHaveBeenCalledWith('topic-1');
   });
 
   it('keeps a 200-quiz import at two createMany calls', async () => {
-    const quizzes = Array.from({ length: 200 }, (_, index) => quizPayload(index));
+    const quizzes = Array.from({ length: 200 }, (_, index) =>
+      quizPayload(index),
+    );
 
     const result = await service.createQuizzes({ quizzes });
 

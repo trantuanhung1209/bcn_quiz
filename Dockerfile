@@ -7,6 +7,13 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends openssl ca-c
 COPY package.json package-lock.json ./
 RUN npm ci
 
+FROM deps AS prod-deps
+COPY prisma.config.ts ./
+COPY prisma ./prisma
+RUN npm prune --omit=dev \
+  && npx prisma generate \
+  && npm cache clean --force
+
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
 RUN apt-get update -y && apt-get install -y --no-install-recommends openssl ca-certificates \
@@ -24,13 +31,11 @@ RUN apt-get update -y && apt-get install -y --no-install-recommends openssl ca-c
   && rm -rf /var/lib/apt/lists/* \
   && groupadd --system --gid 1001 nestjs \
   && useradd --system --uid 1001 --gid nestjs nestjs
-COPY package.json package-lock.json prisma.config.ts ./
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/prisma ./prisma
-COPY docker/entrypoint.sh /app/docker/entrypoint.sh
-RUN chmod +x /app/docker/entrypoint.sh \
-  && chown -R nestjs:nestjs /app
+COPY --chown=nestjs:nestjs package.json prisma.config.ts ./
+COPY --chown=nestjs:nestjs --from=prod-deps /app/node_modules ./node_modules
+COPY --chown=nestjs:nestjs --from=build /app/dist ./dist
+COPY --chown=nestjs:nestjs --from=build /app/prisma ./prisma
+COPY --chown=nestjs:nestjs --chmod=755 docker/entrypoint.sh /app/docker/entrypoint.sh
 USER nestjs
 EXPOSE 3001
 ENTRYPOINT ["/app/docker/entrypoint.sh"]

@@ -14,7 +14,11 @@ describe('TopicService', () => {
       update: jest.fn(),
     },
     course: { findUnique: jest.fn() },
-    courseTopic: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn() },
+    courseTopic: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
+    },
     $transaction: jest.fn(),
   };
 

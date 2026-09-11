@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { AttemptSessionStatus } from '@prisma/client';
 import { AttemptService } from './attempt.service';
 
@@ -29,6 +25,7 @@ describe('AttemptService', () => {
 
   const courseProgressService = {
     evaluateCoursesByTopic: jest.fn(),
+    syncUserTopicCoverage: jest.fn(),
   };
 
   let service: AttemptService;
@@ -63,11 +60,7 @@ describe('AttemptService', () => {
       });
 
       await expect(
-        service.saveSessionProgress(
-          'sess-1',
-          { answers: { q1: 'A' } },
-          req,
-        ),
+        service.saveSessionProgress('sess-1', { answers: { q1: 'A' } }, req),
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(prisma.attemptSession.update).not.toHaveBeenCalled();
@@ -86,11 +79,7 @@ describe('AttemptService', () => {
       prisma.attemptSession.update.mockResolvedValue({});
 
       await expect(
-        service.saveSessionProgress(
-          'sess-2',
-          { answers: { q1: 'A' } },
-          req,
-        ),
+        service.saveSessionProgress('sess-2', { answers: { q1: 'A' } }, req),
       ).rejects.toEqual(
         expect.objectContaining({
           message: 'Session has expired',
@@ -212,11 +201,7 @@ describe('AttemptService', () => {
       });
 
       await expect(
-        service.saveSessionProgress(
-          'sess-4',
-          { answers: { q1: 'A' } },
-          req,
-        ),
+        service.saveSessionProgress('sess-4', { answers: { q1: 'A' } }, req),
       ).rejects.toEqual(
         expect.objectContaining({
           response: expect.objectContaining({ code: 'TOPIC_CLOSED' }),

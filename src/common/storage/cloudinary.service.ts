@@ -244,7 +244,11 @@ export class CloudinaryService {
           },
           (error, uploadResult) => {
             if (error || !uploadResult) {
-              reject(error ?? new Error('Cloudinary upload failed'));
+              reject(
+                error instanceof Error
+                  ? error
+                  : new Error('Cloudinary upload failed'),
+              );
               return;
             }
             resolve(uploadResult);

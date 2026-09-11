@@ -70,7 +70,7 @@ export class TopicController {
 
   @Roles('admin')
   @Post('upload/signature')
-  async createUploadSignature(@Body() dto: CreateUploadSignatureDto) {
+  createUploadSignature(@Body() dto: CreateUploadSignatureDto) {
     return this.topicService.createUploadSignature(dto);
   }
 

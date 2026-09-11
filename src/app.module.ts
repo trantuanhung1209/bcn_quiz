@@ -28,7 +28,9 @@ import { RedisModule } from './redis/redis.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    WinstonModule.forRoot(createWinstonLoggerOptions(process.env.SERVICE_NAME ?? 'quiz_api')),
+    WinstonModule.forRoot(
+      createWinstonLoggerOptions(process.env.SERVICE_NAME ?? 'quiz_api'),
+    ),
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

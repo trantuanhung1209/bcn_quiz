@@ -39,24 +39,18 @@ describe('topic-schedule', () => {
 
   describe('validateTopicScheduleWindow', () => {
     it('rejects startsAt >= endsAt', () => {
-      expect(() =>
-        validateTopicScheduleWindow(endsAt, startsAt),
-      ).toThrow(BadRequestException);
-      expect(() =>
-        validateTopicScheduleWindow(startsAt, startsAt),
-      ).toThrow(BadRequestException);
+      expect(() => validateTopicScheduleWindow(endsAt, startsAt)).toThrow(
+        BadRequestException,
+      );
+      expect(() => validateTopicScheduleWindow(startsAt, startsAt)).toThrow(
+        BadRequestException,
+      );
     });
 
     it('allows null sides and ordered windows', () => {
-      expect(() =>
-        validateTopicScheduleWindow(null, null),
-      ).not.toThrow();
-      expect(() =>
-        validateTopicScheduleWindow(startsAt, endsAt),
-      ).not.toThrow();
-      expect(() =>
-        validateTopicScheduleWindow(startsAt, null),
-      ).not.toThrow();
+      expect(() => validateTopicScheduleWindow(null, null)).not.toThrow();
+      expect(() => validateTopicScheduleWindow(startsAt, endsAt)).not.toThrow();
+      expect(() => validateTopicScheduleWindow(startsAt, null)).not.toThrow();
     });
   });
 

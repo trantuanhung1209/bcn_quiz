@@ -90,7 +90,10 @@ function toRawQuiz(quiz: any): RawQuiz {
     options: {
       is_code: (quiz.options ?? []).some((option: any) => option.isCode),
       data: Object.fromEntries(
-        (quiz.options ?? []).map((option: any) => [option.label, option.content]),
+        (quiz.options ?? []).map((option: any) => [
+          option.label,
+          option.content,
+        ]),
       ),
     },
     answer: quiz.answer,
@@ -453,7 +456,9 @@ export class TopicService {
         ...(data.name !== undefined && { name: data.name }),
         ...(data.slug !== undefined && { slug: data.slug }),
         ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
-        ...(data.imagePublicId !== undefined && { imagePublicId: data.imagePublicId }),
+        ...(data.imagePublicId !== undefined && {
+          imagePublicId: data.imagePublicId,
+        }),
         ...(data.startsAt !== undefined && { startsAt: data.startsAt }),
         ...(data.endsAt !== undefined && { endsAt: data.endsAt }),
       },
@@ -484,17 +489,18 @@ export class TopicService {
     }
 
     for (const link of linkedCourses) {
-      await this.courseProgressService.reevaluateAllUsersForCourse(link.courseId);
+      await this.courseProgressService.reevaluateAllUsersForCourse(
+        link.courseId,
+      );
     }
 
     return { id, deleted: true };
   }
 
   createUploadSignature(dto: CreateUploadSignatureDto) {
-    const folder = (process.env.CLOUDINARY_TOPIC_IMAGE_FOLDER ?? 'topic-images').replace(
-      /^\/+|\/+$/g,
-      '',
-    );
+    const folder = (
+      process.env.CLOUDINARY_TOPIC_IMAGE_FOLDER ?? 'topic-images'
+    ).replace(/^\/+|\/+$/g, '');
     const timestamp = Math.floor(Date.now() / 1000);
     const publicId = dto.publicId?.trim()
       ? this.sanitizePublicId(dto.publicId)
@@ -532,7 +538,10 @@ export class TopicService {
     }
   }
 
-  private async ensureSlugUniqueForLinkedCourses(topicId: string, slug: string) {
+  private async ensureSlugUniqueForLinkedCourses(
+    topicId: string,
+    slug: string,
+  ) {
     const links = await this.prisma.courseTopic.findMany({
       where: { topicId },
       select: { courseId: true },
@@ -570,7 +579,9 @@ export class TopicService {
     imagePublicId?: string,
   ): Promise<void> {
     if ((imageUrl && !imagePublicId) || (!imageUrl && imagePublicId)) {
-      throw new BadRequestException('imageUrl and imagePublicId must be provided together');
+      throw new BadRequestException(
+        'imageUrl and imagePublicId must be provided together',
+      );
     }
 
     if (imageUrl) {
@@ -582,12 +593,19 @@ export class TopicService {
         throw new BadRequestException('imageUrl is not a valid URL');
       }
 
-      if (parsed.protocol !== 'https:' || !parsed.hostname.endsWith('res.cloudinary.com')) {
-        throw new BadRequestException('imageUrl must be a valid Cloudinary https URL');
+      if (
+        parsed.protocol !== 'https:' ||
+        !parsed.hostname.endsWith('res.cloudinary.com')
+      ) {
+        throw new BadRequestException(
+          'imageUrl must be a valid Cloudinary https URL',
+        );
       }
 
       if (!parsed.pathname.includes(`/${cloudName}/`)) {
-        throw new BadRequestException('imageUrl does not belong to the configured Cloudinary cloud');
+        throw new BadRequestException(
+          'imageUrl does not belong to the configured Cloudinary cloud',
+        );
       }
     }
 
@@ -598,7 +616,9 @@ export class TopicService {
 
   private sanitizePublicId(input: string): string {
     const trimmed = input.trim();
-    const sanitized = trimmed.replace(/[^a-zA-Z0-9/_-]/g, '_').replace(/^\/+|\/+$/g, '');
+    const sanitized = trimmed
+      .replace(/[^a-zA-Z0-9/_-]/g, '_')
+      .replace(/^\/+|\/+$/g, '');
 
     if (!sanitized) {
       throw new BadRequestException('publicId is invalid');

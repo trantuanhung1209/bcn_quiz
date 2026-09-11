@@ -56,9 +56,7 @@ describe('RolesGuard', () => {
     });
 
     expect(
-      guard.canActivate(
-        mockContext({ data: { user: { role: 'Admin' } } }),
-      ),
+      guard.canActivate(mockContext({ data: { user: { role: 'Admin' } } })),
     ).toBe(true);
   });
 
@@ -69,9 +67,9 @@ describe('RolesGuard', () => {
       return undefined;
     });
 
-    expect(() =>
-      guard.canActivate(mockContext({ role: 'user' })),
-    ).toThrow(ForbiddenException);
+    expect(() => guard.canActivate(mockContext({ role: 'user' }))).toThrow(
+      ForbiddenException,
+    );
   });
 
   it('rejects missing authenticated user when roles required', () => {

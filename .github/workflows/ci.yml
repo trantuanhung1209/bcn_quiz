@@ -1,17 +1,33 @@
-name: CI
+name: CI/CD
 
 on:
   pull_request:
   push:
-    branches: [master, main]
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: production-${{ github.repository }}
+  cancel-in-progress: false
+
+env:
+  PROJECT_NAME: bcn_quiz
+  PROJECT_DIR: /opt/apps/bcn_quiz
+  IMAGE_NAME: ghcr.io/bcn-org/bcn_quiz
 
 jobs:
   lint-and-test:
+    name: Lint, Test & Build
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: actions/setup-node@v4
         with:
@@ -24,8 +40,238 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=critical
+
       - name: Lint
-        run: npm run lint
+        run: npx eslint "{src,apps,libs,test}/**/*.ts"
 
       - name: Unit tests
         run: npm test -- --runInBand --forceExit
+
+      - name: Build application
+        run: npm run build
+
+  build-and-push:
+    name: Build & Push Image
+    needs: lint-and-test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+
+  deploy:
+    name: Deploy Production
+    needs: build-and-push
+    runs-on:
+      - self-hosted
+      - linux
+      - production
+      - docker
+      - bcn-org
+    timeout-minutes: 15
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate required production configuration
+        env:
+          APP_PORT_VALUE: ${{ vars.APP_PORT }}
+          HOST_PORT_VALUE: ${{ vars.HOST_PORT }}
+          POSTGRES_USER_VALUE: ${{ vars.POSTGRES_USER }}
+          POSTGRES_DB_VALUE: ${{ vars.POSTGRES_DB }}
+          POSTGRES_PASSWORD_VALUE: ${{ secrets.POSTGRES_PASSWORD }}
+          DATABASE_URL_VALUE: ${{ secrets.DATABASE_URL }}
+          REDIS_URL_VALUE: ${{ secrets.REDIS_URL }}
+          REDIS_PASSWORD_VALUE: ${{ secrets.REDIS_PASSWORD }}
+          PROFILES_API_BASE_URL_VALUE: ${{ vars.PROFILES_API_BASE_URL }}
+        run: |
+          set -eu
+
+          check_required() {
+            name="$1"
+            value="$2"
+            if [ -z "$value" ]; then
+              echo "::error::$name is not configured in the production environment"
+              exit 1
+            fi
+            echo "$name is configured"
+          }
+
+          check_required APP_PORT "$APP_PORT_VALUE"
+          check_required HOST_PORT "$HOST_PORT_VALUE"
+          check_required POSTGRES_USER "$POSTGRES_USER_VALUE"
+          check_required POSTGRES_DB "$POSTGRES_DB_VALUE"
+          check_required POSTGRES_PASSWORD "$POSTGRES_PASSWORD_VALUE"
+          check_required DATABASE_URL "$DATABASE_URL_VALUE"
+          check_required REDIS_URL "$REDIS_URL_VALUE"
+          check_required REDIS_PASSWORD "$REDIS_PASSWORD_VALUE"
+          check_required PROFILES_API_BASE_URL "$PROFILES_API_BASE_URL_VALUE"
+
+      - name: Prepare deployment files
+        run: |
+          set -eu
+          mkdir -p "${PROJECT_DIR}"
+          cp docker-compose.prod.yml "${PROJECT_DIR}/docker-compose.yml"
+
+      - name: Generate production environment
+        env:
+          APP_PORT_VALUE: ${{ vars.APP_PORT }}
+          HOST_PORT_VALUE: ${{ vars.HOST_PORT }}
+          SERVICE_NAME_VALUE: ${{ vars.SERVICE_NAME }}
+          BODY_LIMIT_VALUE: ${{ vars.BODY_LIMIT }}
+          CORS_ORIGINS_VALUE: ${{ vars.CORS_ORIGINS }}
+          POSTGRES_USER_VALUE: ${{ vars.POSTGRES_USER }}
+          POSTGRES_DB_VALUE: ${{ vars.POSTGRES_DB }}
+          POSTGRES_PASSWORD_VALUE: ${{ secrets.POSTGRES_PASSWORD }}
+          DATABASE_URL_VALUE: ${{ secrets.DATABASE_URL }}
+          DB_POOL_MAX_VALUE: ${{ vars.DB_POOL_MAX }}
+          DB_POOL_WARM_VALUE: ${{ vars.DB_POOL_WARM }}
+          DB_POOL_IDLE_MS_VALUE: ${{ vars.DB_POOL_IDLE_MS }}
+          DB_POOL_CONNECT_TIMEOUT_MS_VALUE: ${{ vars.DB_POOL_CONNECT_TIMEOUT_MS }}
+          DB_POOL_KEEPALIVE_DELAY_MS_VALUE: ${{ vars.DB_POOL_KEEPALIVE_DELAY_MS }}
+          PRISMA_TX_MAX_WAIT_MS_VALUE: ${{ vars.PRISMA_TX_MAX_WAIT_MS }}
+          PRISMA_TX_TIMEOUT_MS_VALUE: ${{ vars.PRISMA_TX_TIMEOUT_MS }}
+          REQUEST_QUERY_LOG_VALUE: ${{ vars.REQUEST_QUERY_LOG }}
+          REDIS_URL_VALUE: ${{ secrets.REDIS_URL }}
+          REDIS_KEY_PREFIX_VALUE: ${{ vars.REDIS_KEY_PREFIX }}
+          REDIS_PASSWORD_VALUE: ${{ secrets.REDIS_PASSWORD }}
+          PROFILES_API_BASE_URL_VALUE: ${{ vars.PROFILES_API_BASE_URL }}
+          PROFILES_HTTP_TIMEOUT_MS_VALUE: ${{ vars.PROFILES_HTTP_TIMEOUT_MS }}
+          PROFILES_WARMUP_TIMEOUT_MS_VALUE: ${{ vars.PROFILES_WARMUP_TIMEOUT_MS }}
+          AUTH_CACHE_TTL_MS_VALUE: ${{ vars.AUTH_CACHE_TTL_MS }}
+          CLOUDINARY_CLOUD_NAME_VALUE: ${{ vars.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY_VALUE: ${{ vars.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET_VALUE: ${{ secrets.CLOUDINARY_API_SECRET }}
+          CLOUDINARY_IMAGE_FORMAT_VALUE: ${{ vars.CLOUDINARY_IMAGE_FORMAT }}
+          CLOUDINARY_IMAGE_QUALITY_VALUE: ${{ vars.CLOUDINARY_IMAGE_QUALITY }}
+          CLOUDINARY_IMAGE_MAX_BYTES_VALUE: ${{ vars.CLOUDINARY_IMAGE_MAX_BYTES }}
+          CLOUDINARY_QUIZ_IMAGE_FOLDER_VALUE: ${{ vars.CLOUDINARY_QUIZ_IMAGE_FOLDER }}
+          CLOUDINARY_TOPIC_IMAGE_FOLDER_VALUE: ${{ vars.CLOUDINARY_TOPIC_IMAGE_FOLDER }}
+          CLOUDINARY_COURSE_IMAGE_FOLDER_VALUE: ${{ vars.CLOUDINARY_COURSE_IMAGE_FOLDER }}
+          CLOUDINARY_PROJECT_FOLDER_VALUE: ${{ vars.CLOUDINARY_PROJECT_FOLDER }}
+          CLOUDINARY_PROJECT_REQUIREMENT_FOLDER_VALUE: ${{ vars.CLOUDINARY_PROJECT_REQUIREMENT_FOLDER }}
+          GET_CACHE_ENABLED_VALUE: ${{ vars.GET_CACHE_ENABLED }}
+          GET_CACHE_TTL_MS_VALUE: ${{ vars.GET_CACHE_TTL_MS }}
+          LOG_LEVEL_VALUE: ${{ vars.LOG_LEVEL }}
+          LOG_FILE_ENABLED_VALUE: ${{ vars.LOG_FILE_ENABLED }}
+          LOKI_ENABLED_VALUE: ${{ vars.LOKI_ENABLED }}
+          LOKI_HOST_VALUE: ${{ vars.LOKI_HOST }}
+          LOKI_BASIC_AUTH_VALUE: ${{ secrets.LOKI_BASIC_AUTH }}
+          LOKI_BATCH_INTERVAL_SECONDS_VALUE: ${{ vars.LOKI_BATCH_INTERVAL_SECONDS }}
+          LOKI_TIMEOUT_MS_VALUE: ${{ vars.LOKI_TIMEOUT_MS }}
+        run: |
+          set -eu
+          temp_env="${RUNNER_TEMP}/bcn_quiz.env"
+
+          {
+            printf 'IMAGE_NAME=%s\n' "${IMAGE_NAME}"
+            printf 'IMAGE_TAG=%s\n' "${GITHUB_SHA}"
+            printf 'HOST_PORT=%s\n' "${HOST_PORT_VALUE}"
+            printf 'NODE_ENV=production\n'
+            printf 'PORT=%s\n' "${APP_PORT_VALUE}"
+            printf 'SERVICE_NAME=%s\n' "${SERVICE_NAME_VALUE:-quiz_api}"
+            printf 'BODY_LIMIT=%s\n' "${BODY_LIMIT_VALUE:-5mb}"
+            printf 'CORS_ORIGINS=%s\n' "${CORS_ORIGINS_VALUE}"
+            printf 'POSTGRES_USER=%s\n' "${POSTGRES_USER_VALUE}"
+            printf 'POSTGRES_DB=%s\n' "${POSTGRES_DB_VALUE}"
+            printf 'POSTGRES_PASSWORD=%s\n' "${POSTGRES_PASSWORD_VALUE}"
+            printf 'DATABASE_URL=%s\n' "${DATABASE_URL_VALUE}"
+            printf 'DB_POOL_MAX=%s\n' "${DB_POOL_MAX_VALUE:-10}"
+            printf 'DB_POOL_WARM=%s\n' "${DB_POOL_WARM_VALUE:-4}"
+            printf 'DB_POOL_IDLE_MS=%s\n' "${DB_POOL_IDLE_MS_VALUE:-300000}"
+            printf 'DB_POOL_CONNECT_TIMEOUT_MS=%s\n' "${DB_POOL_CONNECT_TIMEOUT_MS_VALUE:-10000}"
+            printf 'DB_POOL_KEEPALIVE_DELAY_MS=%s\n' "${DB_POOL_KEEPALIVE_DELAY_MS_VALUE:-10000}"
+            printf 'PRISMA_TX_MAX_WAIT_MS=%s\n' "${PRISMA_TX_MAX_WAIT_MS_VALUE:-10000}"
+            printf 'PRISMA_TX_TIMEOUT_MS=%s\n' "${PRISMA_TX_TIMEOUT_MS_VALUE:-20000}"
+            printf 'REQUEST_QUERY_LOG=%s\n' "${REQUEST_QUERY_LOG_VALUE:-false}"
+            printf 'REDIS_URL=%s\n' "${REDIS_URL_VALUE}"
+            printf 'REDIS_KEY_PREFIX=%s\n' "${REDIS_KEY_PREFIX_VALUE:-bcn:quiz:}"
+            printf 'REDIS_PASSWORD=%s\n' "${REDIS_PASSWORD_VALUE}"
+            printf 'PROFILES_API_BASE_URL=%s\n' "${PROFILES_API_BASE_URL_VALUE}"
+            printf 'PROFILES_HTTP_TIMEOUT_MS=%s\n' "${PROFILES_HTTP_TIMEOUT_MS_VALUE:-10000}"
+            printf 'PROFILES_WARMUP_TIMEOUT_MS=%s\n' "${PROFILES_WARMUP_TIMEOUT_MS_VALUE:-3000}"
+            printf 'AUTH_CACHE_TTL_MS=%s\n' "${AUTH_CACHE_TTL_MS_VALUE:-60000}"
+            printf 'CLOUDINARY_CLOUD_NAME=%s\n' "${CLOUDINARY_CLOUD_NAME_VALUE}"
+            printf 'CLOUDINARY_API_KEY=%s\n' "${CLOUDINARY_API_KEY_VALUE}"
+            printf 'CLOUDINARY_API_SECRET=%s\n' "${CLOUDINARY_API_SECRET_VALUE}"
+            printf 'CLOUDINARY_IMAGE_FORMAT=%s\n' "${CLOUDINARY_IMAGE_FORMAT_VALUE:-webp}"
+            printf 'CLOUDINARY_IMAGE_QUALITY=%s\n' "${CLOUDINARY_IMAGE_QUALITY_VALUE}"
+            printf 'CLOUDINARY_IMAGE_MAX_BYTES=%s\n' "${CLOUDINARY_IMAGE_MAX_BYTES_VALUE}"
+            printf 'CLOUDINARY_QUIZ_IMAGE_FOLDER=%s\n' "${CLOUDINARY_QUIZ_IMAGE_FOLDER_VALUE:-quiz-images}"
+            printf 'CLOUDINARY_TOPIC_IMAGE_FOLDER=%s\n' "${CLOUDINARY_TOPIC_IMAGE_FOLDER_VALUE:-topic-images}"
+            printf 'CLOUDINARY_COURSE_IMAGE_FOLDER=%s\n' "${CLOUDINARY_COURSE_IMAGE_FOLDER_VALUE:-course-images}"
+            printf 'CLOUDINARY_PROJECT_FOLDER=%s\n' "${CLOUDINARY_PROJECT_FOLDER_VALUE:-project-submissions}"
+            printf 'CLOUDINARY_PROJECT_REQUIREMENT_FOLDER=%s\n' "${CLOUDINARY_PROJECT_REQUIREMENT_FOLDER_VALUE:-project-requirements}"
+            printf 'GET_CACHE_ENABLED=%s\n' "${GET_CACHE_ENABLED_VALUE:-true}"
+            printf 'GET_CACHE_TTL_MS=%s\n' "${GET_CACHE_TTL_MS_VALUE:-20000}"
+            printf 'LOG_LEVEL=%s\n' "${LOG_LEVEL_VALUE:-info}"
+            printf 'LOG_FILE_ENABLED=%s\n' "${LOG_FILE_ENABLED_VALUE:-false}"
+            printf 'LOKI_ENABLED=%s\n' "${LOKI_ENABLED_VALUE:-false}"
+            printf 'LOKI_HOST=%s\n' "${LOKI_HOST_VALUE}"
+            printf 'LOKI_BASIC_AUTH=%s\n' "${LOKI_BASIC_AUTH_VALUE}"
+            printf 'LOKI_BATCH_INTERVAL_SECONDS=%s\n' "${LOKI_BATCH_INTERVAL_SECONDS_VALUE:-5}"
+            printf 'LOKI_TIMEOUT_MS=%s\n' "${LOKI_TIMEOUT_MS_VALUE:-10000}"
+          } > "$temp_env"
+
+          chmod 600 "$temp_env"
+          mv "$temp_env" "${PROJECT_DIR}/.env"
+
+      - name: Pull image
+        run: |
+          set -eu
+          cd "${PROJECT_DIR}"
+          docker compose pull
+
+      - name: Deploy
+        run: |
+          set -eu
+          cd "${PROJECT_DIR}"
+          docker compose up -d --remove-orphans
+
+      - name: Health check
+        env:
+          HOST_PORT_VALUE: ${{ vars.HOST_PORT }}
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --connect-timeout 2 --max-time 5 \
+              "http://127.0.0.1:${HOST_PORT_VALUE}/health"; then
+              echo
+              echo "Application is healthy"
+              exit 0
+            fi
+            echo "Health check attempt ${attempt}/30 failed"
+            sleep 2
+          done
+
+          echo "::error::Health check failed"
+          docker logs "${PROJECT_NAME}" --tail 100 || true
+          exit 1

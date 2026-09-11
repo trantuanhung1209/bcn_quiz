@@ -14,9 +14,7 @@ export class AuthTokenCache<T> {
   ) {}
 
   static hashCredentials(parts: Array<string | undefined>): string {
-    const material = parts
-      .map((part) => part?.trim() ?? '')
-      .join('\0');
+    const material = parts.map((part) => part?.trim() ?? '').join('\0');
 
     return createHash('sha256').update(material).digest('hex');
   }

@@ -37,7 +37,7 @@ export function createWinstonLoggerOptions(service: string): LoggerOptions {
         // BẮT BUỘC THÊM: Để đọc được thông báo lỗi từ Loki nếu vẫn bị 400
         onConnectionError: (err) => {
           console.error('🔥 LOKI CONNECTION ERROR:', err);
-        }
+        },
       }) as unknown as winston.transport,
     );
   }

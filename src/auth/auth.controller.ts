@@ -183,8 +183,7 @@ export class AuthController {
       origin.includes('localhost') || origin.includes('127.0.0.1');
 
     // FE is on HTTP (not HTTPS) when origin starts with http:// and is localhost.
-    const isLocalhostHttp =
-      isLocalhostOrigin && origin.startsWith('http://');
+    const isLocalhostHttp = isLocalhostOrigin && origin.startsWith('http://');
 
     this.logger.debug(
       `[normalizeSetCookies] origin=${origin} isLocalhostOrigin=${isLocalhostOrigin} isLocalhostHttp=${isLocalhostHttp}`,
@@ -204,7 +203,10 @@ export class AuthController {
         if (isLocalhostHttp) {
           // HTTP localhost: browser rejects cookies with Secure flag or SameSite=None.
           normalized = normalized.replace(/;\s*Secure/gi, '');
-          normalized = normalized.replace(/;\s*SameSite=None/gi, '; SameSite=Lax');
+          normalized = normalized.replace(
+            /;\s*SameSite=None/gi,
+            '; SameSite=Lax',
+          );
         }
         // HTTPS localhost (Vite + mkcert): Secure is fine, SameSite=None is fine too.
       }
@@ -212,7 +214,9 @@ export class AuthController {
       // Production FE on *.uside.studio:
       // keep Domain=.uside.studio intact so the cookie is shared across subdomains.
 
-      this.logger.debug(`[normalizeSetCookies] normalized cookie: ${normalized}`);
+      this.logger.debug(
+        `[normalizeSetCookies] normalized cookie: ${normalized}`,
+      );
 
       return normalized;
     });

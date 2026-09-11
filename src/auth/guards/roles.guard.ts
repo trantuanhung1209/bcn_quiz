@@ -44,10 +44,10 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const requiredRoles = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
-      context.getHandler(),
-      context.getClass(),
-    ]);
+    const requiredRoles = this.reflector.getAllAndOverride<string[]>(
+      ROLES_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     if (!requiredRoles || requiredRoles.length === 0) {
       return true;
@@ -57,7 +57,9 @@ export class RolesGuard implements CanActivate {
       role.toLowerCase(),
     );
 
-    const req = context.switchToHttp().getRequest<Request & { user?: UserWithRoles }>();
+    const req = context
+      .switchToHttp()
+      .getRequest<Request & { user?: UserWithRoles }>();
     const user = req.user;
 
     if (!user) {

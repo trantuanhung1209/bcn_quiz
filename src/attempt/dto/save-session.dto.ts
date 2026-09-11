@@ -6,7 +6,6 @@ import {
   Validate,
   ValidatorConstraint,
   ValidatorConstraintInterface,
-  ValidationArguments,
 } from 'class-validator';
 
 @ValidatorConstraint({ name: 'sessionAnswersShape', async: false })
@@ -36,7 +35,7 @@ class SessionAnswersConstraint implements ValidatorConstraintInterface {
     return true;
   }
 
-  defaultMessage(_args: ValidationArguments): string {
+  defaultMessage(): string {
     return 'answers must be an object with at most 500 string entries (key/value length ≤ 64)';
   }
 }

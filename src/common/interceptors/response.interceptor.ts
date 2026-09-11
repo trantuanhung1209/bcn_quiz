@@ -18,7 +18,7 @@ export class ResponseInterceptor implements NestInterceptor {
     const res = context.switchToHttp().getResponse();
     const url = req.originalUrl ?? req.url ?? req.path ?? '';
 
-    if (url.startsWith('/auth')) {
+    if (url.startsWith('/auth') || url === '/health') {
       return next.handle();
     }
 

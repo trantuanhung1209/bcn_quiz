@@ -72,9 +72,7 @@ export class CourseProgressService {
         },
         data: {
           isCompleted: coverageComplete,
-          completedAt: coverageComplete
-            ? (progress.completedAt ?? now)
-            : null,
+          completedAt: coverageComplete ? (progress.completedAt ?? now) : null,
         },
       });
       updated += 1;
@@ -330,7 +328,9 @@ export class CourseProgressService {
     ]);
 
     const allTopicIds = [
-      ...new Set(courses.flatMap((course) => course.topics.map((t) => t.topicId))),
+      ...new Set(
+        courses.flatMap((course) => course.topics.map((t) => t.topicId)),
+      ),
     ];
 
     await this.healStaleTopicCompletions(userId, allTopicIds);
@@ -375,7 +375,9 @@ export class CourseProgressService {
     ]);
 
     const completedTopicIds = new Set(
-      topicProgresses.filter((row) => row.isCompleted).map((row) => row.topicId),
+      topicProgresses
+        .filter((row) => row.isCompleted)
+        .map((row) => row.topicId),
     );
 
     const approvedByCourseId = new Map<string, Date | null>();
@@ -476,8 +478,12 @@ export class CourseProgressService {
       hasApprovedProject: boolean;
     },
   ): Promise<UserCourseProgress> {
-    const { totalTopics, completedTopicCount, approvedReviewedAt, hasApprovedProject } =
-      stats;
+    const {
+      totalTopics,
+      completedTopicCount,
+      approvedReviewedAt,
+      hasApprovedProject,
+    } = stats;
 
     // If course has no topics, topic milestone is considered satisfied automatically
     const topicMilestoneCompleted =

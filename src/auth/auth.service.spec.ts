@@ -104,9 +104,17 @@ describe('AuthService.validateToken cache', () => {
       }),
     );
 
-    await service.validateToken('token-logout', undefined, 'Bearer token-logout');
+    await service.validateToken(
+      'token-logout',
+      undefined,
+      'Bearer token-logout',
+    );
     await service.logout(undefined, 'Bearer token-logout');
-    await service.validateToken('token-logout', undefined, 'Bearer token-logout');
+    await service.validateToken(
+      'token-logout',
+      undefined,
+      'Bearer token-logout',
+    );
 
     expect(httpService.get).toHaveBeenCalledTimes(2);
   });

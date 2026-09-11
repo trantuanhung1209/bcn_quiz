@@ -23,7 +23,10 @@ import {
 } from './dto/my-course-progress-query.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { ProjectSubmissionFileMetadataDto } from './dto/project-submission-file-metadata.dto';
-import { ReviewDecision, ReviewProjectSubmissionDto } from './dto/review-project-submission.dto';
+import {
+  ReviewDecision,
+  ReviewProjectSubmissionDto,
+} from './dto/review-project-submission.dto';
 import { UpdateProjectSubmissionDto } from './dto/update-project-submission.dto';
 import { UpdateCourseTopicsDto } from './dto/update-course-topics.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
@@ -317,7 +320,10 @@ export class CourseService {
         select: { imagePublicId: true },
       });
 
-      if (existing?.imagePublicId && existing.imagePublicId !== data.imagePublicId) {
+      if (
+        existing?.imagePublicId &&
+        existing.imagePublicId !== data.imagePublicId
+      ) {
         await this.deleteCourseImage(existing.imagePublicId);
       }
     }
@@ -372,7 +378,9 @@ export class CourseService {
         this.assertCourseProgressWeights({
           hasProject,
           topicWeight: providedAnyWeight ? data.topicWeight : resolvedTopic,
-          projectWeight: providedAnyWeight ? data.projectWeight : resolvedProject,
+          projectWeight: providedAnyWeight
+            ? data.projectWeight
+            : resolvedProject,
           requirePairWhenAnyProvided: providedAnyWeight,
         });
       }
@@ -389,9 +397,13 @@ export class CourseService {
       data: {
         ...(data.name !== undefined && { name: data.name }),
         ...(data.slug !== undefined && { slug: data.slug }),
-        ...(data.description !== undefined && { description: data.description }),
+        ...(data.description !== undefined && {
+          description: data.description,
+        }),
         ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
-        ...(data.imagePublicId !== undefined && { imagePublicId: data.imagePublicId }),
+        ...(data.imagePublicId !== undefined && {
+          imagePublicId: data.imagePublicId,
+        }),
         ...(typeof data.hasProject === 'boolean'
           ? {
               hasProject: data.hasProject,
@@ -400,7 +412,9 @@ export class CourseService {
             }
           : {}),
         ...(data.topicWeight !== undefined &&
-          typeof data.hasProject !== 'boolean' && { topicWeight: data.topicWeight }),
+          typeof data.hasProject !== 'boolean' && {
+            topicWeight: data.topicWeight,
+          }),
         ...(data.projectWeight !== undefined &&
           typeof data.hasProject !== 'boolean' && {
             projectWeight: data.projectWeight,
@@ -439,10 +453,9 @@ export class CourseService {
   }
 
   createImageUploadSignature(dto: CreateUploadSignatureDto) {
-    const folder = (process.env.CLOUDINARY_COURSE_IMAGE_FOLDER ?? 'course-images').replace(
-      /^\/+|\/+$/g,
-      '',
-    );
+    const folder = (
+      process.env.CLOUDINARY_COURSE_IMAGE_FOLDER ?? 'course-images'
+    ).replace(/^\/+|\/+$/g, '');
     const timestamp = Math.floor(Date.now() / 1000);
     const publicId = dto.publicId?.trim()
       ? this.sanitizeCoursePublicId(dto.publicId)
@@ -535,7 +548,10 @@ export class CourseService {
     return requirement;
   }
 
-  async upsertProjectRequirement(courseId: string, data: UpsertCourseProjectDto) {
+  async upsertProjectRequirement(
+    courseId: string,
+    data: UpsertCourseProjectDto,
+  ) {
     const course = await this.ensureCourseExists(courseId);
     const normalizedDescription = data.description.trim();
 
@@ -553,7 +569,7 @@ export class CourseService {
         },
       });
 
-    const attachmentPatch = await this.resolveRequirementAttachmentPatch(
+    const attachmentPatch = this.resolveRequirementAttachmentPatch(
       courseId,
       data,
       existingRequirement,
@@ -639,7 +655,9 @@ export class CourseService {
 
     const folder = this.getProjectSubmissionFolder(courseId, userId);
     const timestamp = Math.floor(Date.now() / 1000);
-    const publicId = dto.publicId?.trim() ? this.sanitizePublicId(dto.publicId) : undefined;
+    const publicId = dto.publicId?.trim()
+      ? this.sanitizePublicId(dto.publicId)
+      : undefined;
 
     return this.cloudinaryService.createUploadSignature({
       timestamp,
@@ -665,11 +683,15 @@ export class CourseService {
     });
 
     if (!requirement) {
-      throw new BadRequestException('Project requirement is not configured for this course');
+      throw new BadRequestException(
+        'Project requirement is not configured for this course',
+      );
     }
 
     if (!requirement.description?.trim()) {
-      throw new BadRequestException('Project requirement must include a description');
+      throw new BadRequestException(
+        'Project requirement must include a description',
+      );
     }
 
     const existingSubmission = await this.prisma.projectSubmission.findFirst({
@@ -720,11 +742,17 @@ export class CourseService {
         },
       });
     } catch (error) {
-      await this.deleteCloudinaryFiles(uploadedCloudFiles.map((file) => file.publicId));
+      await this.deleteCloudinaryFiles(
+        uploadedCloudFiles.map((file) => file.publicId),
+      );
       throw error;
     }
 
-    await this.courseProgressService.evaluateCourseProgress(userId, courseId, req);
+    await this.courseProgressService.evaluateCourseProgress(
+      userId,
+      courseId,
+      req,
+    );
 
     return this.mapProjectSubmission(submission);
   }
@@ -769,14 +797,18 @@ export class CourseService {
     });
 
     if (!submission) {
-      throw new NotFoundException(`Submission with id '${submissionId}' was not found`);
+      throw new NotFoundException(
+        `Submission with id '${submissionId}' was not found`,
+      );
     }
 
     if (
       submission.status !== ProjectSubmissionStatus.PENDING_REVIEW &&
       submission.status !== ProjectSubmissionStatus.REJECTED
     ) {
-      throw new BadRequestException('Only pending or rejected submissions can be updated');
+      throw new BadRequestException(
+        'Only pending or rejected submissions can be updated',
+      );
     }
 
     const uploadedFiles = data.files ?? [];
@@ -791,19 +823,25 @@ export class CourseService {
     const hasNoteUpdate = typeof data.note !== 'undefined';
 
     if (!hasFileUpdate && !hasNoteUpdate) {
-      throw new BadRequestException('Provide files or note to update submission');
+      throw new BadRequestException(
+        'Provide files or note to update submission',
+      );
     }
 
-    let filesToDelete = replaceAllFiles
+    const filesToDelete = replaceAllFiles
       ? [...submission.files]
       : submission.files.filter((file) =>
-          removeTargets.some((target) => this.fileMatchesRemoveTarget(file, target)),
+          removeTargets.some((target) =>
+            this.fileMatchesRemoveTarget(file, target),
+          ),
         );
 
     if (!replaceAllFiles && removeTargets.length > 0) {
       const unresolvedTargets = removeTargets.filter(
         (target) =>
-          !submission.files.some((file) => this.fileMatchesRemoveTarget(file, target)),
+          !submission.files.some((file) =>
+            this.fileMatchesRemoveTarget(file, target),
+          ),
       );
 
       if (unresolvedTargets.length > 0) {
@@ -823,10 +861,12 @@ export class CourseService {
     }
 
     if (finalFileCount > MAX_PROJECT_FILES) {
-      throw new BadRequestException(`A maximum of ${MAX_PROJECT_FILES} files is allowed`);
+      throw new BadRequestException(
+        `A maximum of ${MAX_PROJECT_FILES} files is allowed`,
+      );
     }
 
-    const nextNote = hasNoteUpdate ? data.note ?? null : submission.note;
+    const nextNote = hasNoteUpdate ? (data.note ?? null) : submission.note;
     const updateInput: Prisma.ProjectSubmissionUpdateInput = {
       note: nextNote,
       // Reset to PENDING_REVIEW when resubmitting a rejected submission
@@ -839,7 +879,11 @@ export class CourseService {
     };
 
     const uploadedCloudFiles = hasNewFiles
-      ? this.normalizeAndValidateSubmissionFiles(uploadedFiles, courseId, userId)
+      ? this.normalizeAndValidateSubmissionFiles(
+          uploadedFiles,
+          courseId,
+          userId,
+        )
       : [];
 
     let updated: ProjectSubmissionWithFiles;
@@ -898,7 +942,9 @@ export class CourseService {
       });
     } catch (error) {
       if (uploadedCloudFiles.length > 0) {
-        await this.deleteCloudinaryFiles(uploadedCloudFiles.map((file) => file.publicId));
+        await this.deleteCloudinaryFiles(
+          uploadedCloudFiles.map((file) => file.publicId),
+        );
       }
       throw error;
     }
@@ -938,14 +984,18 @@ export class CourseService {
     });
 
     if (!submission) {
-      throw new NotFoundException(`Submission with id '${submissionId}' was not found`);
+      throw new NotFoundException(
+        `Submission with id '${submissionId}' was not found`,
+      );
     }
 
     if (
       submission.status !== ProjectSubmissionStatus.PENDING_REVIEW &&
       submission.status !== ProjectSubmissionStatus.REJECTED
     ) {
-      throw new BadRequestException('Only pending or rejected submissions can be deleted');
+      throw new BadRequestException(
+        'Only pending or rejected submissions can be deleted',
+      );
     }
 
     await this.prisma.projectSubmission.delete({
@@ -996,7 +1046,9 @@ export class CourseService {
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     return {
-      items: submissions.map((submission) => this.mapProjectSubmission(submission)),
+      items: submissions.map((submission) =>
+        this.mapProjectSubmission(submission),
+      ),
       pagination: {
         page,
         limit,
@@ -1024,7 +1076,9 @@ export class CourseService {
     });
 
     if (!submission) {
-      throw new NotFoundException(`Submission with id '${submissionId}' was not found`);
+      throw new NotFoundException(
+        `Submission with id '${submissionId}' was not found`,
+      );
     }
 
     const nextStatus =
@@ -1048,12 +1102,18 @@ export class CourseService {
     });
 
     // Metadata sync to /users/me requires user context, so reevaluation here skips remote sync.
-    await this.courseProgressService.evaluateCourseProgress(submission.userId, courseId);
+    await this.courseProgressService.evaluateCourseProgress(
+      submission.userId,
+      courseId,
+    );
 
     return this.mapProjectSubmission(updated);
   }
 
-  async getMyCoursesProgress(query: MyCourseProgressQueryDto, req: ExpressRequest) {
+  async getMyCoursesProgress(
+    query: MyCourseProgressQueryDto,
+    req: ExpressRequest,
+  ) {
     const userId = this.extractUserId(req);
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
@@ -1109,18 +1169,17 @@ export class CourseService {
       total_count: number;
     };
 
-    const scopeStatuses =
-      query.status
-        ? [query.status]
-        : query.scope === MyCourseProgressScope.COMPLETED
-          ? [CourseProgressStatus.COMPLETED]
-          : query.scope === MyCourseProgressScope.ACTIVE
-            ? [
-                CourseProgressStatus.IN_PROGRESS,
-                CourseProgressStatus.TOPICS_COMPLETED,
-                CourseProgressStatus.PROJECT_PENDING_APPROVAL,
-              ]
-            : null;
+    const scopeStatuses = query.status
+      ? [query.status]
+      : query.scope === MyCourseProgressScope.COMPLETED
+        ? [CourseProgressStatus.COMPLETED]
+        : query.scope === MyCourseProgressScope.ACTIVE
+          ? [
+              CourseProgressStatus.IN_PROGRESS,
+              CourseProgressStatus.TOPICS_COMPLETED,
+              CourseProgressStatus.PROJECT_PENDING_APPROVAL,
+            ]
+          : null;
 
     const statusClause = scopeStatuses
       ? Prisma.sql`AND p.status::text IN (${Prisma.join(scopeStatuses)})`
@@ -1278,6 +1337,7 @@ export class CourseService {
       }));
 
     const { files: _files, ...rest } = submission;
+    void _files;
 
     return {
       ...rest,
@@ -1286,15 +1346,17 @@ export class CourseService {
   }
 
   private getProjectSubmissionFolder(courseId: string, userId: string): string {
-    const baseFolder = (process.env.CLOUDINARY_PROJECT_FOLDER ?? 'project-submissions')
-      .replace(/^\/+|\/+$/g, '');
+    const baseFolder = (
+      process.env.CLOUDINARY_PROJECT_FOLDER ?? 'project-submissions'
+    ).replace(/^\/+|\/+$/g, '');
 
     return `${baseFolder}/${courseId}/${userId}`;
   }
 
   private getProjectRequirementFolder(courseId: string): string {
     const baseFolder = (
-      process.env.CLOUDINARY_PROJECT_REQUIREMENT_FOLDER ?? 'project-requirements'
+      process.env.CLOUDINARY_PROJECT_REQUIREMENT_FOLDER ??
+      'project-requirements'
     ).replace(/^\/+|\/+$/g, '');
 
     return `${baseFolder}/${courseId}`;
@@ -1306,7 +1368,7 @@ export class CourseService {
    * - both null → clear
    * - both set → validate + replace (delete old after save)
    */
-  private async resolveRequirementAttachmentPatch(
+  private resolveRequirementAttachmentPatch(
     courseId: string,
     data: UpsertCourseProjectDto,
     existing: {
@@ -1314,14 +1376,14 @@ export class CourseService {
       attachmentPublicId: string | null;
       attachmentOriginalName: string | null;
     } | null,
-  ): Promise<{
+  ): {
     data: {
       attachmentUrl?: string | null;
       attachmentPublicId?: string | null;
       attachmentOriginalName?: string | null;
     };
     publicIdToDelete?: string;
-  }> {
+  } {
     const urlProvided = data.attachmentUrl !== undefined;
     const publicIdProvided = data.attachmentPublicId !== undefined;
 
@@ -1429,7 +1491,9 @@ export class CourseService {
 
   private sanitizePublicId(input: string): string {
     const trimmed = input.trim();
-    const sanitized = trimmed.replace(/[^a-zA-Z0-9/_-]/g, '_').replace(/^\/+|\/+$/g, '');
+    const sanitized = trimmed
+      .replace(/[^a-zA-Z0-9/_-]/g, '_')
+      .replace(/^\/+|\/+$/g, '');
 
     if (!sanitized) {
       throw new BadRequestException('publicId is invalid');
@@ -1448,7 +1512,9 @@ export class CourseService {
     }
 
     if (files.length > MAX_PROJECT_FILES) {
-      throw new BadRequestException(`A maximum of ${MAX_PROJECT_FILES} files is allowed`);
+      throw new BadRequestException(
+        `A maximum of ${MAX_PROJECT_FILES} files is allowed`,
+      );
     }
 
     const folder = this.getProjectSubmissionFolder(courseId, userId);
@@ -1469,7 +1535,9 @@ export class CourseService {
 
       const extension = extname(originalName).toLowerCase();
       if (!ALLOWED_UPLOAD_EXTENSIONS.has(extension)) {
-        throw new BadRequestException('Only zip, rar, pdf, docx files are allowed');
+        throw new BadRequestException(
+          'Only zip, rar, pdf, docx files are allowed',
+        );
       }
 
       if (!mimeType) {
@@ -1477,7 +1545,9 @@ export class CourseService {
       }
 
       if (fileSize < 1 || fileSize > MAX_PROJECT_FILE_SIZE) {
-        throw new BadRequestException('File size must be between 1 byte and 20MB');
+        throw new BadRequestException(
+          'File size must be between 1 byte and 20MB',
+        );
       }
 
       let parsedUrl: URL;
@@ -1487,24 +1557,37 @@ export class CourseService {
         throw new BadRequestException(`Invalid secureUrl: ${secureUrl}`);
       }
 
-      if (parsedUrl.protocol !== 'https:' || !parsedUrl.hostname.endsWith('res.cloudinary.com')) {
-        throw new BadRequestException('secureUrl must be a valid Cloudinary https URL');
+      if (
+        parsedUrl.protocol !== 'https:' ||
+        !parsedUrl.hostname.endsWith('res.cloudinary.com')
+      ) {
+        throw new BadRequestException(
+          'secureUrl must be a valid Cloudinary https URL',
+        );
       }
 
       if (!parsedUrl.pathname.includes(`/${cloudName}/`)) {
-        throw new BadRequestException('secureUrl does not belong to configured Cloudinary cloud');
+        throw new BadRequestException(
+          'secureUrl does not belong to configured Cloudinary cloud',
+        );
       }
 
       if (!publicId.startsWith(`${folder}/`)) {
-        throw new BadRequestException('publicId does not belong to the expected course upload folder');
+        throw new BadRequestException(
+          'publicId does not belong to the expected course upload folder',
+        );
       }
 
       if (seenSecureUrls.has(secureUrl)) {
-        throw new BadRequestException('Duplicate secureUrl detected in files payload');
+        throw new BadRequestException(
+          'Duplicate secureUrl detected in files payload',
+        );
       }
 
       if (seenPublicIds.has(publicId)) {
-        throw new BadRequestException('Duplicate publicId detected in files payload');
+        throw new BadRequestException(
+          'Duplicate publicId detected in files payload',
+        );
       }
 
       seenSecureUrls.add(secureUrl);
@@ -1525,7 +1608,7 @@ export class CourseService {
       storageKeys.map(async (key) => {
         try {
           await this.cloudinaryService.deleteRawFile(key);
-        } catch (error) {
+        } catch {
           this.logger.warn(`Failed to delete Cloudinary asset '${key}'`);
         }
       }),
@@ -1629,7 +1712,11 @@ export class CourseService {
       return [];
     }
 
-    return [...new Set(rawTargets.map((item) => item.trim()).filter((item) => item.length > 0))];
+    return [
+      ...new Set(
+        rawTargets.map((item) => item.trim()).filter((item) => item.length > 0),
+      ),
+    ];
   }
 
   /** Match removeFiles entry against id, secureUrl, publicId, or Cloudinary path variants. */
@@ -1735,7 +1822,9 @@ export class CourseService {
     imagePublicId?: string,
   ): Promise<void> {
     if ((imageUrl && !imagePublicId) || (!imageUrl && imagePublicId)) {
-      throw new BadRequestException('imageUrl and imagePublicId must be provided together');
+      throw new BadRequestException(
+        'imageUrl and imagePublicId must be provided together',
+      );
     }
 
     if (imageUrl) {
@@ -1747,12 +1836,19 @@ export class CourseService {
         throw new BadRequestException('imageUrl is not a valid URL');
       }
 
-      if (parsed.protocol !== 'https:' || !parsed.hostname.endsWith('res.cloudinary.com')) {
-        throw new BadRequestException('imageUrl must be a valid Cloudinary https URL');
+      if (
+        parsed.protocol !== 'https:' ||
+        !parsed.hostname.endsWith('res.cloudinary.com')
+      ) {
+        throw new BadRequestException(
+          'imageUrl must be a valid Cloudinary https URL',
+        );
       }
 
       if (!parsed.pathname.includes(`/${cloudName}/`)) {
-        throw new BadRequestException('imageUrl does not belong to the configured Cloudinary cloud');
+        throw new BadRequestException(
+          'imageUrl does not belong to the configured Cloudinary cloud',
+        );
       }
     }
 
@@ -1763,7 +1859,9 @@ export class CourseService {
 
   private sanitizeCoursePublicId(input: string): string {
     const trimmed = input.trim();
-    const sanitized = trimmed.replace(/[^a-zA-Z0-9/_-]/g, '_').replace(/^\/+|\/+$/g, '');
+    const sanitized = trimmed
+      .replace(/[^a-zA-Z0-9/_-]/g, '_')
+      .replace(/^\/+|\/+$/g, '');
 
     if (!sanitized) {
       throw new BadRequestException('publicId is invalid');
@@ -1776,7 +1874,9 @@ export class CourseService {
     try {
       await this.cloudinaryService.deleteRawFile(publicId);
     } catch {
-      this.logger.warn(`Failed to delete Cloudinary course image '${publicId}'`);
+      this.logger.warn(
+        `Failed to delete Cloudinary course image '${publicId}'`,
+      );
     }
   }
 }

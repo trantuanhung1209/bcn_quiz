@@ -12,7 +12,10 @@ import { Observable } from 'rxjs';
  */
 @Injectable()
 export class RequestLoggingInterceptor implements NestInterceptor {
-  intercept(_context: ExecutionContext, next: CallHandler): Observable<unknown> {
+  intercept(
+    _context: ExecutionContext,
+    next: CallHandler,
+  ): Observable<unknown> {
     return next.handle();
   }
 }

@@ -35,14 +35,14 @@ API listens on `PORT` (required). Redis is required in production (`REDIS_URL` o
 
 ## Scripts
 
-| Script | Purpose |
-|--------|---------|
-| `npm run start:dev` | Watch mode |
-| `npm run start:prod` | `prisma migrate deploy` then run `dist` |
-| `npm run db:migrate` | Create/apply migrations (dev) |
-| `npm run migrate:deploy` | Apply migrations (CI/prod) |
-| `npm test` | Unit tests |
-| `npm run lint` | ESLint |
+| Script                   | Purpose                                 |
+| ------------------------ | --------------------------------------- |
+| `npm run start:dev`      | Watch mode                              |
+| `npm run start:prod`     | `prisma migrate deploy` then run `dist` |
+| `npm run db:migrate`     | Create/apply migrations (dev)           |
+| `npm run migrate:deploy` | Apply migrations (CI/prod)              |
+| `npm test`               | Unit tests                              |
+| `npm run lint`           | ESLint                                  |
 
 ## Main modules
 
@@ -71,6 +71,38 @@ Optional `startsAt` / `endsAt` on a Topic control when students may take the exa
 - Prefer `migrate deploy` over `db push`.
 - Do not commit `/data` (Docker volumes) or `/prisma/client` leftovers.
 - Set `REQUEST_QUERY_LOG=false` unless debugging.
+
+### BCN organization deployment
+
+Production deployment is defined by `.github/workflows/ci.yml` and
+`docker-compose.prod.yml`. It runs only from `main`, publishes the immutable
+Git SHA image to `ghcr.io/bcn-org/bcn_quiz`, and deploys it through the BCN
+organization runner to `/opt/apps/bcn_quiz`.
+
+Create a GitHub Environment named `production` before the first deployment.
+At minimum, configure:
+
+- Variables: `APP_PORT=3001`, `HOST_PORT` (assigned by BCN infra),
+  `POSTGRES_USER=quiz`, `POSTGRES_DB=bcn_quiz`, and
+  `PROFILES_API_BASE_URL=http://bcn_profiles:3000`.
+- Secrets: `POSTGRES_PASSWORD`, `DATABASE_URL`, `REDIS_URL`, and
+  `REDIS_PASSWORD`. The database URL must use host `quiz-postgres`; the shared
+  Redis URL must use host `redis`.
+
+Cloudinary uploads require the variables `CLOUDINARY_CLOUD_NAME` and
+`CLOUDINARY_API_KEY`, plus the secret `CLOUDINARY_API_SECRET`. Other settings
+from `.env.example` are mapped by the workflow and use application defaults
+when omitted.
+
+Before enabling production deployment:
+
+1. Move or transfer the repository to `bcn-org` and use `main` as its default
+   branch.
+2. Confirm `HOST_PORT` is unique on the production server.
+3. Confirm the external Docker network `bcn_profiles_default` exists. Quiz
+   uses it for shared Redis and internal Profiles authentication.
+4. Start Docker locally and run `docker build -t bcn-quiz:test .`.
+5. Merge to `main`, then monitor the `CI/CD` workflow and `/health` check.
 
 ## License
 

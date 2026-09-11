@@ -21,11 +21,16 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     const mode = resolveRedisMode(this.config);
-    if (mode === 'standalone' && !this.config.get<string>('REDIS_URL')?.trim()) {
+    if (
+      mode === 'standalone' &&
+      !this.config.get<string>('REDIS_URL')?.trim()
+    ) {
       if (this.config.get<string>('NODE_ENV') === 'production') {
         throw new Error('REDIS_URL environment variable is required');
       }
-      this.logger.warn('REDIS_URL is not set; defaulting to redis://localhost:6379');
+      this.logger.warn(
+        'REDIS_URL is not set; defaulting to redis://localhost:6379',
+      );
     }
 
     this.client = createRedisClient(this.config);
@@ -35,7 +40,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
     await this.client.connect();
     const pong = await this.client.ping();
-    this.logger.log(`Redis connected (${pong}), mode=${mode}, prefix=${this.prefix}`);
+    this.logger.log(
+      `Redis connected (${pong}), mode=${mode}, prefix=${this.prefix}`,
+    );
   }
 
   async onModuleDestroy(): Promise<void> {

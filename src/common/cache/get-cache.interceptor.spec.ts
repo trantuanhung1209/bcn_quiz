@@ -49,7 +49,11 @@ describe('GetCacheInterceptor', () => {
     process.env.GET_CACHE_ENABLED = prevEnabled;
   });
 
-  async function run(method: string, url: string, query?: Record<string, unknown>) {
+  async function run(
+    method: string,
+    url: string,
+    query?: Record<string, unknown>,
+  ) {
     const { context, headers } = mockHttp(method, url, query);
     const next = { handle: () => of({ ok: true }) };
     await new Promise<void>((resolve) => {
