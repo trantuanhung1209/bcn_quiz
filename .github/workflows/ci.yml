@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: npm
@@ -109,7 +109,6 @@ jobs:
           POSTGRES_USER_VALUE: ${{ vars.POSTGRES_USER }}
           POSTGRES_DB_VALUE: ${{ vars.POSTGRES_DB }}
           POSTGRES_PASSWORD_VALUE: ${{ secrets.POSTGRES_PASSWORD }}
-          DATABASE_URL_VALUE: ${{ secrets.DATABASE_URL }}
           REDIS_URL_VALUE: ${{ secrets.REDIS_URL }}
           REDIS_PASSWORD_VALUE: ${{ secrets.REDIS_PASSWORD }}
           PROFILES_API_BASE_URL_VALUE: ${{ vars.PROFILES_API_BASE_URL }}
@@ -131,7 +130,6 @@ jobs:
           check_required POSTGRES_USER "$POSTGRES_USER_VALUE"
           check_required POSTGRES_DB "$POSTGRES_DB_VALUE"
           check_required POSTGRES_PASSWORD "$POSTGRES_PASSWORD_VALUE"
-          check_required DATABASE_URL "$DATABASE_URL_VALUE"
           check_required REDIS_URL "$REDIS_URL_VALUE"
           check_required REDIS_PASSWORD "$REDIS_PASSWORD_VALUE"
           check_required PROFILES_API_BASE_URL "$PROFILES_API_BASE_URL_VALUE"
@@ -152,7 +150,6 @@ jobs:
           POSTGRES_USER_VALUE: ${{ vars.POSTGRES_USER }}
           POSTGRES_DB_VALUE: ${{ vars.POSTGRES_DB }}
           POSTGRES_PASSWORD_VALUE: ${{ secrets.POSTGRES_PASSWORD }}
-          DATABASE_URL_VALUE: ${{ secrets.DATABASE_URL }}
           DB_POOL_MAX_VALUE: ${{ vars.DB_POOL_MAX }}
           DB_POOL_WARM_VALUE: ${{ vars.DB_POOL_WARM }}
           DB_POOL_IDLE_MS_VALUE: ${{ vars.DB_POOL_IDLE_MS }}
@@ -192,6 +189,30 @@ jobs:
           set -eu
           temp_env="${RUNNER_TEMP}/bcn_quiz.env"
 
+          uri_encode() {
+            local input="$1"
+            local output=""
+            local char
+            local hex
+            local i
+
+            LC_ALL=C
+            for ((i = 0; i < ${#input}; i++)); do
+              char="${input:i:1}"
+              case "$char" in
+                [a-zA-Z0-9.~_-]) output+="$char" ;;
+                *)
+                  printf -v hex '%%%02X' "'$char"
+                  output+="$hex"
+                  ;;
+              esac
+            done
+            printf '%s' "$output"
+          }
+
+          postgres_password_encoded="$(uri_encode "$POSTGRES_PASSWORD_VALUE")"
+          database_url_value="postgresql://${POSTGRES_USER_VALUE}:${postgres_password_encoded}@quiz-postgres:5432/${POSTGRES_DB_VALUE}?schema=public"
+
           {
             printf 'IMAGE_NAME=%s\n' "${IMAGE_NAME}"
             printf 'IMAGE_TAG=%s\n' "${GITHUB_SHA}"
@@ -204,7 +225,7 @@ jobs:
             printf 'POSTGRES_USER=%s\n' "${POSTGRES_USER_VALUE}"
             printf 'POSTGRES_DB=%s\n' "${POSTGRES_DB_VALUE}"
             printf 'POSTGRES_PASSWORD=%s\n' "${POSTGRES_PASSWORD_VALUE}"
-            printf 'DATABASE_URL=%s\n' "${DATABASE_URL_VALUE}"
+            printf 'DATABASE_URL=%s\n' "${database_url_value}"
             printf 'DB_POOL_MAX=%s\n' "${DB_POOL_MAX_VALUE:-10}"
             printf 'DB_POOL_WARM=%s\n' "${DB_POOL_WARM_VALUE:-4}"
             printf 'DB_POOL_IDLE_MS=%s\n' "${DB_POOL_IDLE_MS_VALUE:-300000}"

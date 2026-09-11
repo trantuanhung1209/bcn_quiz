@@ -85,9 +85,9 @@ At minimum, configure:
 - Variables: `APP_PORT=3001`, `HOST_PORT` (assigned by BCN infra),
   `POSTGRES_USER=quiz`, `POSTGRES_DB=bcn_quiz`, and
   `PROFILES_API_BASE_URL=http://bcn_profiles:3000`.
-- Secrets: `POSTGRES_PASSWORD`, `DATABASE_URL`, `REDIS_URL`, and
-  `REDIS_PASSWORD`. The database URL must use host `quiz-postgres`; the shared
-  Redis URL must use host `redis`.
+- Secrets: `POSTGRES_PASSWORD`, `REDIS_URL`, and
+  `REDIS_PASSWORD`. CI generates the database URL with host `quiz-postgres`;
+  the shared Redis URL must use host `redis`.
 
 Cloudinary uploads require the variables `CLOUDINARY_CLOUD_NAME` and
 `CLOUDINARY_API_KEY`, plus the secret `CLOUDINARY_API_SECRET`. Other settings
