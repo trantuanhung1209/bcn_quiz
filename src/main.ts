@@ -36,6 +36,7 @@ async function bootstrap() {
     /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/,
     /^https?:\/\/(.*\.)?uside\.id\.vn$/,
     /^https?:\/\/(.*\.)?uside\.studio$/,
+    /^https:\/\/([a-z0-9-]+\.)*bcn\.id\.vn$/,
     /^https:\/\/.+\.vercel\.app$/,
     'https://profiles-uside-studio.vercel.app',
     'https://quizzes-uside-studio.vercel.app',
