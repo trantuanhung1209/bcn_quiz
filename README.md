@@ -89,10 +89,16 @@ At minimum, configure:
   `REDIS_PASSWORD`. CI generates the database URL with host `quiz-postgres`;
   the shared Redis URL must use host `redis`.
 
-Cloudinary uploads require the variables `CLOUDINARY_CLOUD_NAME` and
-`CLOUDINARY_API_KEY`, plus the secret `CLOUDINARY_API_SECRET`. Other settings
+Cloudinary uploads require the variable `CLOUDINARY_CLOUD_NAME` and secrets
+`CLOUDINARY_API_KEY` and `CLOUDINARY_API_SECRET`. For existing setups, an API key
+variable is also accepted; the secret takes precedence. Deployment validates all
+three settings before changing the running stack. Other settings
 from `.env.example` are mapped by the workflow and use application defaults
 when omitted.
+
+`AUTH_CACHE_TTL_MS` defaults to `0`: Quiz revalidates protected requests with
+Profiles so blocking, logout, and role changes apply across both apps without a
+60-second stale authorization window. A positive value opts into that window.
 
 Before enabling production deployment:
 
