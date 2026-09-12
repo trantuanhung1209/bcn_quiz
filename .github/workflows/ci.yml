@@ -112,6 +112,9 @@ jobs:
           REDIS_URL_VALUE: ${{ secrets.REDIS_URL }}
           REDIS_PASSWORD_VALUE: ${{ secrets.REDIS_PASSWORD }}
           PROFILES_API_BASE_URL_VALUE: ${{ vars.PROFILES_API_BASE_URL }}
+          CLOUDINARY_CLOUD_NAME_VALUE: ${{ vars.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY_VALUE: ${{ secrets.CLOUDINARY_API_KEY || vars.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET_VALUE: ${{ secrets.CLOUDINARY_API_SECRET }}
         run: |
           set -eu
 
@@ -133,6 +136,9 @@ jobs:
           check_required REDIS_URL "$REDIS_URL_VALUE"
           check_required REDIS_PASSWORD "$REDIS_PASSWORD_VALUE"
           check_required PROFILES_API_BASE_URL "$PROFILES_API_BASE_URL_VALUE"
+          check_required CLOUDINARY_CLOUD_NAME "$CLOUDINARY_CLOUD_NAME_VALUE"
+          check_required CLOUDINARY_API_KEY "$CLOUDINARY_API_KEY_VALUE"
+          check_required CLOUDINARY_API_SECRET "$CLOUDINARY_API_SECRET_VALUE"
 
       - name: Prepare deployment files
         run: |
@@ -166,7 +172,7 @@ jobs:
           PROFILES_WARMUP_TIMEOUT_MS_VALUE: ${{ vars.PROFILES_WARMUP_TIMEOUT_MS }}
           AUTH_CACHE_TTL_MS_VALUE: ${{ vars.AUTH_CACHE_TTL_MS }}
           CLOUDINARY_CLOUD_NAME_VALUE: ${{ vars.CLOUDINARY_CLOUD_NAME }}
-          CLOUDINARY_API_KEY_VALUE: ${{ vars.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_KEY_VALUE: ${{ secrets.CLOUDINARY_API_KEY || vars.CLOUDINARY_API_KEY }}
           CLOUDINARY_API_SECRET_VALUE: ${{ secrets.CLOUDINARY_API_SECRET }}
           CLOUDINARY_IMAGE_FORMAT_VALUE: ${{ vars.CLOUDINARY_IMAGE_FORMAT }}
           CLOUDINARY_IMAGE_QUALITY_VALUE: ${{ vars.CLOUDINARY_IMAGE_QUALITY }}
@@ -240,7 +246,7 @@ jobs:
             printf 'PROFILES_API_BASE_URL=%s\n' "${PROFILES_API_BASE_URL_VALUE}"
             printf 'PROFILES_HTTP_TIMEOUT_MS=%s\n' "${PROFILES_HTTP_TIMEOUT_MS_VALUE:-10000}"
             printf 'PROFILES_WARMUP_TIMEOUT_MS=%s\n' "${PROFILES_WARMUP_TIMEOUT_MS_VALUE:-3000}"
-            printf 'AUTH_CACHE_TTL_MS=%s\n' "${AUTH_CACHE_TTL_MS_VALUE:-60000}"
+            printf 'AUTH_CACHE_TTL_MS=%s\n' "${AUTH_CACHE_TTL_MS_VALUE:-0}"
             printf 'CLOUDINARY_CLOUD_NAME=%s\n' "${CLOUDINARY_CLOUD_NAME_VALUE}"
             printf 'CLOUDINARY_API_KEY=%s\n' "${CLOUDINARY_API_KEY_VALUE}"
             printf 'CLOUDINARY_API_SECRET=%s\n' "${CLOUDINARY_API_SECRET_VALUE}"

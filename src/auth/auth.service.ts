@@ -37,7 +37,9 @@ export class AuthService implements OnModuleInit {
     this.baseUrl = base.replace(/\/$/, '');
     this.tokenCache = new AuthTokenCache<unknown>(
       redis,
-      Number(process.env.AUTH_CACHE_TTL_MS ?? 60_000),
+      // Revalidate with Profiles by default so block/logout/role changes are
+      // authoritative across both apps. Positive TTL opts into stale sessions.
+      Number(process.env.AUTH_CACHE_TTL_MS || 0),
     );
   }
 

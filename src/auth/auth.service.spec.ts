@@ -58,6 +58,29 @@ describe('AuthService.validateToken cache', () => {
     expect(httpService.get).toHaveBeenCalledTimes(1);
   });
 
+  it('revalidates with Profiles by default and immediately rejects revoked sessions', async () => {
+    delete process.env.AUTH_CACHE_TTL_MS;
+    service = new AuthService(httpService, createRedisMock());
+    const error = new AxiosError('Unauthorized');
+    error.response = {
+      status: 401,
+      data: { message: 'revoked' },
+      statusText: 'Unauthorized',
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+    };
+    (httpService.get as jest.Mock)
+      .mockReturnValueOnce(of({ status: 200, data: { id: 'u1' }, headers: {} }))
+      .mockReturnValueOnce(throwError(() => error));
+    await expect(service.validateToken('same-token')).resolves.toEqual({
+      id: 'u1',
+    });
+    await expect(service.validateToken('same-token')).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+    expect(httpService.get).toHaveBeenCalledTimes(2);
+  });
+
   it('does not cache failed validations', async () => {
     const axiosError = new AxiosError('Unauthorized');
     axiosError.response = {

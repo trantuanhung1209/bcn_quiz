@@ -1,4 +1,4 @@
-import { ValidationPipe } from '@nestjs/common';
+import { ForbiddenException, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { json, urlencoded } from 'express';
@@ -63,7 +63,7 @@ async function bootstrap() {
       if (isAllowed) {
         callback(null, true);
       } else {
-        callback(new Error(`Cross-Origin Request Blocked: ${origin}`));
+        callback(new ForbiddenException('Cross-Origin Request Blocked'));
       }
     },
     credentials: true,
