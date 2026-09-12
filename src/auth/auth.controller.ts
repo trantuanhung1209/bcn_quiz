@@ -189,10 +189,6 @@ export class AuthController {
       `[normalizeSetCookies] origin=${origin} isLocalhostOrigin=${isLocalhostOrigin} isLocalhostHttp=${isLocalhostHttp}`,
     );
 
-    setCookies.forEach((c, i) => {
-      this.logger.debug(`[normalizeSetCookies] upstream cookie[${i}]: ${c}`);
-    });
-
     return setCookies.map((cookie) => {
       let normalized = cookie;
 
@@ -213,10 +209,6 @@ export class AuthController {
 
       // Production FE on *.uside.studio:
       // keep Domain=.uside.studio intact so the cookie is shared across subdomains.
-
-      this.logger.debug(
-        `[normalizeSetCookies] normalized cookie: ${normalized}`,
-      );
 
       return normalized;
     });
