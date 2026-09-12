@@ -16,14 +16,17 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   constructor(private readonly config: ConfigService) {
     this.prefix =
-      this.config.get<string>('REDIS_KEY_PREFIX')?.trim() || 'bcn:quiz:';
+      this.config.get<string>('REDIS_PREFIX')?.trim() ||
+      this.config.get<string>('REDIS_KEY_PREFIX')?.trim() ||
+      'bcn:quiz:';
   }
 
   async onModuleInit(): Promise<void> {
     const mode = resolveRedisMode(this.config);
     if (
       mode === 'standalone' &&
-      !this.config.get<string>('REDIS_URL')?.trim()
+      !this.config.get<string>('REDIS_URL')?.trim() &&
+      !this.config.get<string>('REDIS_HOST')?.trim()
     ) {
       if (this.config.get<string>('NODE_ENV') === 'production') {
         throw new Error('REDIS_URL environment variable is required');

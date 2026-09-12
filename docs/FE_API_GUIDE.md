@@ -1,5 +1,7 @@
 # FE API Guide
 
+> Upload dùng MinIO presigned PUT/GET. Giữ nguyên `secureUrl` và `publicId` từ response xin chữ ký; không tự thêm extension hoặc thay URL. Hướng dẫn presigned PUT/GET và cấu hình ở [DEPLOY.md](../DEPLOY.md).
+
 Tai lieu nay tong hop toan bo API hien co de frontend tich hop nhanh.
 
 > **Last updated:** July 2026 — (1) An `answer` va `explanation` khoi cac API lay danh sach quiz (bao mat), chi tra ve sau khi user submit bai — xem Section 4 va 5. (2) Them API admin lay quiz kem dap an — Section 3.4b. (3) **Quiz ho tro cau hoi hinh anh**: `content.image` + `content.has_image` trong moi response quiz, upload qua `POST /quiz/upload/signature` — xem Section 4.4 va 4.7. (4) **`quizCode` optional**: khong gui khi create → backend tu sinh `q_001`, `q_002`, ...; khi update khong gui → giu ma cu — xem Section 4.4. (5) **Tao nhieu quiz 1 lan**: `POST /quiz/bulk` — xem Section 4.4b.
@@ -122,7 +124,7 @@ Response `data.items[]`:
   "id": "...",
   "name": "JavaScript Basics",
   "slug": "javascript-basics",
-  "imageUrl": "https://res.cloudinary.com/...",
+  "imageUrl": "https://storage.example.com/quizzes/...",
   "imagePublicId": "topic-images/javascript-basics",
   "createdAt": "...",
   "_count": { "quizzes": 10 }
@@ -164,7 +166,7 @@ Danh cho man hinh admin cap nhat quiz trong topic. Format giong 3.4 nhung moi it
         "text": "...",
         "code": "...",
         "has_code": true,
-        "image": "https://res.cloudinary.com/<cloud>/image/upload/quiz-images/abc.png",
+        "image": "https://storage.example.com/quizzes/quiz-images/abc.png",
         "has_image": true
       },
       "options": { "is_code": false, "data": { "1": "10", "2": "20" } },
@@ -191,7 +193,7 @@ Body:
   "name": "JavaScript Basics",
   "slug": "javascript-basics",
   "courseId": "<course_id>",
-  "imageUrl": "https://res.cloudinary.com/...",
+  "imageUrl": "https://storage.example.com/quizzes/...",
   "imagePublicId": "topic-images/javascript-basics"
 }
 ```
@@ -200,7 +202,7 @@ Luu y:
 - `courseId` bat buoc.
 - `slug` chi can unique trong cung mot course, co the trung giua cac course khac.
 - `imageUrl` va `imagePublicId` la optional, nhung neu gui phai gui **ca hai** cung luc. Gui mot trong hai -> `400`.
-- `imageUrl` phai la HTTPS URL thuoc `res.cloudinary.com` va dung cloud name.
+- `imageUrl` phai la URL khớp chính xác MINIO_ENDPOINT, bucket và object key.
 - Lay `imageUrl` + `imagePublicId` bang cach upload anh truoc qua endpoint `POST /topic/upload/signature` (xem muc 3.8).
 
 ### 3.6 Update topic — [Admin]
@@ -213,140 +215,24 @@ Body (tat ca optional):
 {
   "name": "JavaScript Basics v2",
   "slug": "javascript-basics-v2",
-  "imageUrl": "https://res.cloudinary.com/...",
+  "imageUrl": "https://storage.example.com/quizzes/...",
   "imagePublicId": "topic-images/javascript-basics-v2"
 }
 ```
 
 Luu y:
-- Khi cap nhat `imageUrl` + `imagePublicId` moi, anh cu tren Cloudinary se tu dong bi **xoa** neu `imagePublicId` khac.
+- Khi cap nhat `imageUrl` + `imagePublicId` moi, anh cu tren MinIO se tu dong bi **xoa** neu `imagePublicId` khac.
 - De xoa anh cua topic: gui `imageUrl: null, imagePublicId: null` — **khong ho tro hien tai**, chi update bang anh moi.
 
 ### 3.7 Delete topic — [Admin]
 
 `DELETE /topic/:id`
 
-- Xoa topic se tu dong xoa anh tren Cloudinary kem theo.
+- Xoa topic se tu dong xoa anh tren MinIO kem theo.
 
 ### 3.8 Upload topic image signature — [Admin]
 
-`POST /topic/upload/signature`
-
-Lay signature de FE upload anh truc tiep len Cloudinary (khong qua server).
-
-Anh quiz/topic/course duoc convert thanh **WebP** luc upload (`format=webp` nam trong signature). FE phai gui lai `format` trong form Cloudinary neu signature co field do. File project submission **khong** bi convert.
-
-Gioi han kich thuoc anh: **toi da 3MB** (config `CLOUDINARY_IMAGE_MAX_BYTES`). Signature tra `maxBytes` / `maxFileSizeMb` de FE check `file.size` truoc khi upload; backend verify lai khi create/update (vuot → `400`, anh tren Cloudinary bi xoa).
-
-Body (optional):
-
-```json
-{
-  "publicId": "javascript-basics"
-}
-```
-
-- `publicId`: ten file muon dat tren Cloudinary. De trong de Cloudinary tu sinh.
-
-Response `data`:
-
-```json
-{
-  "signature": "abc123...",
-  "timestamp": 1718000000,
-  "folder": "topic-images",
-  "apiKey": "your_api_key",
-  "cloudName": "your_cloud",
-  "resourceType": "auto",
-  "uploadUrl": "https://api.cloudinary.com/v1_1/your_cloud/auto/upload",
-  "format": "webp",
-  "maxBytes": 3145728,
-  "maxFileSizeMb": 3
-}
-```
-
-**Flow upload anh cho topic (3 buoc):**
-
-```
-1. POST /topic/upload/signature  →  nhan signature
-2. FE upload anh truc tiep len Cloudinary (multipart/form-data)
-3. POST /topic hoac PUT /topic/:id  voi { imageUrl, imagePublicId }
-```
-
-**TypeScript snippet:**
-
-```ts
-type UploadSignatureResponse = {
-  signature: string;
-  timestamp: number;
-  folder: string;
-  apiKey: string;
-  cloudName: string;
-  resourceType: 'auto';
-  uploadUrl: string;
-  /** Backend mac dinh `webp` — FE BAT BUOC append neu co. */
-  format?: string;
-  /** Thuong khong co. Chi append neu signature tra ve. */
-  quality?: string;
-  /** Mac dinh 3MB — FE check file.size truoc khi upload. */
-  maxBytes?: number;
-  maxFileSizeMb?: number;
-};
-
-async function getTopicImageSignature(publicId?: string): Promise<UploadSignatureResponse> {
-  const res = await fetch('/topic/upload/signature', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
-    body: JSON.stringify(publicId ? { publicId } : {}),
-  });
-  if (!res.ok) throw new Error('Cannot get signature');
-  const payload = await res.json();
-  return payload.data;
-}
-
-async function uploadTopicImage(file: File, sig: UploadSignatureResponse, publicId?: string) {
-  if (sig.maxBytes && file.size > sig.maxBytes) {
-    throw new Error(`Image must be <= ${sig.maxFileSizeMb ?? 3}MB`);
-  }
-
-  const form = new FormData();
-  form.append('file', file);
-  form.append('api_key', sig.apiKey);
-  form.append('timestamp', String(sig.timestamp));
-  form.append('signature', sig.signature);
-  form.append('folder', sig.folder);
-  form.append('resource_type', sig.resourceType);
-  // Convert/store as WebP (signed). Thieu format → Invalid Signature.
-  if (sig.format) form.append('format', sig.format);
-  if (sig.quality) form.append('quality', sig.quality); // chi khi BE tra ve
-  if (publicId) form.append('public_id', publicId);
-
-  const res = await fetch(sig.uploadUrl, { method: 'POST', body: form });
-  if (!res.ok) throw new Error('Cloudinary upload failed');
-  const result = await res.json();
-
-  return {
-    imageUrl: result.secure_url as string,
-    imagePublicId: result.public_id as string,
-  };
-}
-
-// Usage:
-async function createTopicWithImage(file: File, topicData: { name: string; slug: string; courseId: string }) {
-  const publicId = file.name.replace(/\.[^.]+$/, '');
-  const sig = await getTopicImageSignature(publicId);
-  const { imageUrl, imagePublicId } = await uploadTopicImage(file, sig, publicId);
-
-  const res = await fetch('/topic', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
-    body: JSON.stringify({ ...topicData, imageUrl, imagePublicId }),
-  });
-  return res.json();
-}
-```
-
----
+`POST /topic/upload/signature` với body `{"publicId": "optional-name"}` trả presigned PUT/GET MinIO. Dùng đúng `uploadUrl` để PUT file trực tiếp; lấy `secureUrl`, `publicId` từ response xin chữ ký để lưu metadata. Giới hạn ảnh 3 MB, hết hạn 5 phút. Frontend tự chuyển WebP nếu cần. Xem [luồng upload MinIO trong DEPLOY.md](../DEPLOY.md).
 
 ## 4) Quiz APIs
 
@@ -368,7 +254,7 @@ Response `data.items[]`:
     "text": "Ket qua xuat ra cua doan code sau la gi?",
     "code": "#include <stdio.h>\\nvoid main() { ... }",
     "has_code": true,
-    "image": "https://res.cloudinary.com/<cloud>/image/upload/quiz-images/abc.png",
+    "image": "https://storage.example.com/quizzes/quiz-images/abc.png",
     "has_image": true
   },
   "options": {
@@ -411,7 +297,7 @@ Body:
   "answer": "2",
   "explanation": "Day la toan tu tam nguyen...",
   "topicId": "<topic_id>",
-  "imageUrl": "https://res.cloudinary.com/<cloud>/image/upload/quiz-images/abc.png",
+  "imageUrl": "https://storage.example.com/quizzes/quiz-images/abc.png",
   "imagePublicId": "quiz-images/abc",
   "options": [
     { "label": "1", "content": "10", "isCode": false },
@@ -435,7 +321,7 @@ Body:
 **Cau hoi hinh anh (optional):**
 
 - `imageUrl` + `imagePublicId` la optional, nhung neu gui phai gui **ca hai** cung luc. Gui mot trong hai → `400`.
-- `imageUrl` phai la HTTPS URL thuoc `res.cloudinary.com` va dung cloud name → sai → `400`.
+- `imageUrl` phai la URL khớp chính xác MINIO_ENDPOINT, bucket và object key → sai → `400`.
 - Lay `imageUrl` + `imagePublicId` bang cach upload anh truoc qua `POST /quiz/upload/signature` (xem muc 4.7).
 
 ### 4.4b Create many quizzes — [Admin]
@@ -510,7 +396,7 @@ Body giong create — `quizCode` optional; `answer` van phai la label hop le:
   "answer": "2",
   "explanation": "...",
   "topicId": "<topic_id>",
-  "imageUrl": "https://res.cloudinary.com/<cloud>/image/upload/quiz-images/abc.png",
+  "imageUrl": "https://storage.example.com/quizzes/quiz-images/abc.png",
   "imagePublicId": "quiz-images/abc",
   "options": [
     { "label": "1", "content": "A", "isCode": false },
@@ -524,42 +410,18 @@ Body giong create — `quizCode` optional; `answer` van phai la label hop le:
 **Luu y ve anh khi update (PUT semantics — thay the toan bo):**
 
 - Muon **giu anh cu**: gui lai `imageUrl` + `imagePublicId` hien tai (lay tu `GET /topic/:id/quizzes/full`).
-- Muon **doi anh**: upload anh moi → gui `imageUrl` + `imagePublicId` moi. Anh cu tren Cloudinary se tu dong bi xoa.
-- Muon **xoa anh**: khong gui 2 field nay (hoac gui `null`). Anh cu tren Cloudinary se tu dong bi xoa.
+- Muon **doi anh**: upload anh moi → gui `imageUrl` + `imagePublicId` moi. Anh cu tren MinIO se tu dong bi xoa.
+- Muon **xoa anh**: khong gui 2 field nay (hoac gui `null`). Anh cu tren MinIO se tu dong bi xoa.
 
 ### 4.6 Delete quiz — [Admin]
 
 `DELETE /quiz/:id`
 
-- Xoa quiz se tu dong xoa anh cau hoi tren Cloudinary kem theo (neu co).
+- Xoa quiz se tu dong xoa anh cau hoi tren MinIO kem theo (neu co).
 
 ### 4.7 Upload quiz image signature — [Admin]
 
-`POST /quiz/upload/signature`
-
-Lay signature de FE upload anh cau hoi truc tiep len Cloudinary (khong qua server) — giong het flow cua topic (Section 3.8), chi khac folder mac dinh la `quiz-images`. Response co `format` (mac dinh webp) — FE phai append khi upload.
-
-Body (optional):
-
-```json
-{
-  "publicId": "c-case-01"
-}
-```
-
-Response `data`: giong Section 3.8 (`signature`, `timestamp`, `folder`, `apiKey`, `cloudName`, `resourceType`, `uploadUrl`).
-
-**Flow upload anh cho quiz (3 buoc):**
-
-```
-1. POST /quiz/upload/signature  →  nhan signature
-2. FE upload anh truc tiep len Cloudinary (multipart/form-data)
-3. POST /quiz hoac PUT /quiz/:id  voi { imageUrl, imagePublicId }
-```
-
-TypeScript snippet o Section 3.8 tai su dung duoc — chi doi URL signature sang `/quiz/upload/signature`.
-
----
+`POST /quiz/upload/signature` với body `{"publicId": "optional-name"}` trả presigned PUT/GET MinIO. Dùng đúng `uploadUrl` để PUT file trực tiếp; lấy `secureUrl`, `publicId` từ response xin chữ ký để lưu metadata. Giới hạn ảnh 3 MB, hết hạn 5 phút. Frontend tự chuyển WebP nếu cần. Xem [luồng upload MinIO trong DEPLOY.md](../DEPLOY.md).
 
 ## 5) Attempt + Session APIs
 
@@ -686,7 +548,7 @@ Response `data`:
     {
       "quizId": "...",
       "quizCode": "c_case_02",
-      "content": { "text": "...", "code": null, "has_code": false, "image": "https://res.cloudinary.com/<cloud>/image/upload/quiz-images/xyz.png", "has_image": true },
+      "content": { "text": "...", "code": null, "has_code": false, "image": "https://storage.example.com/quizzes/quiz-images/xyz.png", "has_image": true },
       "options": { "is_code": false, "data": { "1": "A", "2": "B" } },
       "selectedAnswer": null,
       "correctAnswer": "1",
@@ -903,7 +765,7 @@ Rule hoan thanh course:
 | `GET` | `/course/:id/progress/me` | Chi tiet progress **1** course |
 | `GET` | `/course/:id/project-submission/me` | |
 | `GET` | `/course/:id/project-requirement` | De bai project (+ file dinh kem optional). `404` neu chua cau hinh |
-| `POST` | `/course/:id/upload/signature` | Lay signature upload Cloudinary (project file) |
+| `POST` | `/course/:id/upload/signature` | Lay signature upload MinIO (project file) |
 | `POST` | `/course/:id/project-submission` | Submit metadata file |
 | `PATCH` | `/course/:id/project-submission/:submissionId` | Cap nhat submission (PENDING\_REVIEW hoac REJECTED) |
 | `DELETE` | `/course/:id/project-submission/:submissionId` | Xoa submission (PENDING\_REVIEW hoac REJECTED) |
@@ -987,7 +849,7 @@ Y nghia cac field progress (vi du `topicWeight=10`, `projectWeight=90`):
 
 Sap xep: `updatedAt` moi nhat truoc.
 
-Upload project su dung direct upload Cloudinary:
+Upload project su dung direct upload MinIO:
 - Cho phep: `.zip`, `.rar`, `.pdf`, `.docx`
 - Toi da 5 file, moi file toi da 20 MB
 
@@ -995,8 +857,8 @@ Upload project su dung direct upload Cloudinary:
 
 ```
 1. POST /course/:id/upload/signature  →  nhan signature
-2. FE upload file truc tiep len Cloudinary
-3. Cloudinary tra ve secure_url + public_id
+2. FE upload file truc tiep len MinIO
+3. Dùng secureUrl + publicId từ response xin chữ ký (MinIO có thể trả body rỗng)
 4. POST /course/:id/project-submission  voi metadata file
 ```
 
@@ -1008,7 +870,7 @@ Upload project su dung direct upload Cloudinary:
 "files": [
   {
     "id": "...",
-    "secureUrl": "https://res.cloudinary.com/.../file.zip",
+    "secureUrl": "https://storage.example.com/quizzes/.../file.zip",
     "publicId": "project-submissions/<courseId>/<userId>/file",
     "originalName": "my_project_v2.zip",
     "mimeType": "application/zip",
@@ -1032,13 +894,14 @@ Response `data`:
 
 ```json
 {
-  "signature": "cd35bf0407a178577c157ec54fbb9cb3875fd75e",
-  "timestamp": 1775883082,
-  "folder": "project-submissions/<courseId>/<userId>",
-  "apiKey": "223812375436597",
-  "cloudName": "dav7n3cu7",
-  "resourceType": "auto",
-  "uploadUrl": "https://api.cloudinary.com/v1_1/dav7n3cu7/auto/upload"
+  "provider": "minio",
+  "method": "PUT",
+  "uploadUrl": "https://storage.bcn.id.vn/quizzes/<object-key>?<PUT-signature>",
+  "downloadUrl": "https://storage.bcn.id.vn/quizzes/<object-key>?<GET-signature>",
+  "publicId": "project-submissions/<courseId>/<userId>/upload-<uuid>",
+  "secureUrl": "https://storage.example.com/quizzes/project-submissions/<courseId>/<userId>/upload-<uuid>",
+  "maxBytes": 20971520,
+  "expiresAt": "<ISO timestamp>"
 }
 ```
 
@@ -1049,7 +912,7 @@ Body `POST /course/:id/project-submission`:
   "note": "Em nop bai lan dau",
   "files": [
     {
-      "secureUrl": "https://res.cloudinary.com/<cloud>/raw/upload/v123/project-submissions/<courseId>/<userId>/my_project_v2.zip",
+      "secureUrl": "https://storage.example.com/quizzes/project-submissions/<courseId>/<userId>/my_project_v2.zip",
       "publicId": "project-submissions/<courseId>/<userId>/my_project_v2",
       "originalName": "my_project_v2.zip",
       "mimeType": "application/zip",
@@ -1065,11 +928,11 @@ Body `PATCH /course/:id/project-submission/:submissionId`:
 {
   "note": "Em cap nhat ban moi",
   "removeFiles": [
-    "https://res.cloudinary.com/<cloud>/raw/upload/v123/.../old-file.pdf"
+    "https://storage.example.com/quizzes/.../old-file.pdf"
   ],
   "files": [
     {
-      "secureUrl": "https://res.cloudinary.com/<cloud>/raw/upload/v124/.../new-file.zip",
+      "secureUrl": "https://storage.example.com/quizzes/.../new-file.zip",
       "publicId": "project-submissions/<courseId>/<userId>/new-file",
       "originalName": "new-file.zip",
       "mimeType": "application/zip",
@@ -1086,7 +949,7 @@ Rule `PATCH`:
 - Mac dinh giu nguyen tat ca file cu neu **khong** truyen `files` va `removeFiles`.
 - Neu truyen `files` (co phan tu) **ma khong** truyen `removeFiles` → **replace toan bo** file cu bang danh sach moi.
 - `removeFiles`: co the dung `file.id`, `secureUrl`, hoac `publicId` (lay tu `files[]` trong GET/response).
-- `files`: metadata file moi da upload len Cloudinary (**bat buoc** co `originalName`).
+- `files`: metadata file moi da upload len MinIO (**bat buoc** co `originalName`).
 - Co the vua xoa file cu, vua them file moi trong cung 1 request.
 - Tong so file sau cung phai nam trong khoang `1 → 5`.
 - Chi sua `note` thi file **khong** doi — FE muon doi file phai gui `files` (va/hoac `removeFiles`).
@@ -1098,71 +961,8 @@ Rule `DELETE`:
 
 **TypeScript snippet (course project upload):**
 
-```ts
-type UploadSignatureResponse = {
-  signature: string;
-  timestamp: number;
-  folder: string;
-  apiKey: string;
-  cloudName: string;
-  resourceType: 'auto';
-  uploadUrl: string;
-};
+Xem helper `uploadToMinio` trong [DEPLOY.md](../DEPLOY.md); giữ metadata `originalName`, `mimeType`, `fileSize` khi gửi submission.
 
-type UploadedCloudinaryFile = {
-  secureUrl: string;
-  publicId: string;
-  originalName: string;
-  mimeType: string;
-  fileSize: number;
-};
-
-async function getUploadSignature(courseId: string, publicId?: string): Promise<UploadSignatureResponse> {
-  const res = await fetch(`/course/${courseId}/upload/signature`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(publicId ? { publicId } : {}),
-  });
-  if (!res.ok) throw new Error('Cannot get Cloudinary signature');
-  const payload = await res.json();
-  return payload.data;
-}
-
-async function uploadFileToCloudinary(
-  file: File,
-  sig: UploadSignatureResponse,
-  publicId: string,
-): Promise<UploadedCloudinaryFile> {
-  const form = new FormData();
-  form.append('file', file);
-  form.append('api_key', sig.apiKey);
-  form.append('timestamp', String(sig.timestamp));
-  form.append('signature', sig.signature);
-  form.append('folder', sig.folder);
-  form.append('resource_type', sig.resourceType);
-  form.append('public_id', publicId);
-
-  const uploadUrl = sig.uploadUrl ?? `https://api.cloudinary.com/v1_1/${sig.cloudName}/auto/upload`;
-  const res = await fetch(uploadUrl, { method: 'POST', body: form });
-  if (!res.ok) throw new Error('Upload to Cloudinary failed');
-  const result = await res.json();
-
-  return {
-    secureUrl: result.secure_url,
-    publicId: result.public_id,
-    originalName: file.name,
-    mimeType: file.type,
-    fileSize: file.size,
-  };
-}
-
-// Usage
-async function handleProjectUpload(courseId: string, file: File) {
-  const publicId = file.name.replace(/\.[^.]+$/, '');
-  const sig = await getUploadSignature(courseId, publicId);
-  return uploadFileToCloudinary(file, sig, publicId);
-}
-```
 
 ### 7.2 Admin APIs
 
@@ -1184,7 +984,7 @@ Luu y project requirement:
 - `description` (text ngan) **bat buoc**. File dinh kem **optional** — dung de mo ta format / de bai chi tiet (PDF, DOCX, ZIP, RAR).
 - Upload file de bai (admin):
   1. `POST /course/:id/project-requirement/upload/signature`
-  2. Upload Cloudinary (`resourceType: auto`) vao folder `project-requirements/<courseId>/`
+  2. Upload MinIO bằng presigned PUT/GET vao folder `project-requirements/<courseId>/`
   3. `PUT /course/:id/project-requirement` kem `attachmentUrl` + `attachmentPublicId` (+ `attachmentOriginalName` khuyen nghi)
 - Bo file: gui `attachmentUrl: null`, `attachmentPublicId: null` trong PUT.
 - Khong gui 2 field attachment → giu file cu.
@@ -1197,7 +997,7 @@ Luu y project requirement:
   "title": "Mini project",
   "description": "Nop zip + README. Chi tiet xem file dinh kem.",
   "isRequired": true,
-  "attachmentUrl": "https://res.cloudinary.com/.../project-requirements/<courseId>/brief.pdf",
+  "attachmentUrl": "https://storage.example.com/quizzes/.../project-requirements/<courseId>/brief.pdf",
   "attachmentPublicId": "project-requirements/<courseId>/brief",
   "attachmentOriginalName": "de-bai-project.pdf",
   "createdAt": "...",
@@ -1212,7 +1012,7 @@ Luu y project requirement:
   "title": "Mini project",
   "description": "Tom tat yeu cau. Chi tiet trong file.",
   "isRequired": true,
-  "attachmentUrl": "https://res.cloudinary.com/...",
+  "attachmentUrl": "https://storage.example.com/quizzes/...",
   "attachmentPublicId": "project-requirements/<courseId>/brief",
   "attachmentOriginalName": "de-bai-project.pdf"
 }
@@ -1226,7 +1026,7 @@ Luu y project requirement:
   "name": "JavaScript Fundamentals",
   "slug": "javascript-fundamentals",
   "description": "...",
-  "imageUrl": "https://res.cloudinary.com/...",
+  "imageUrl": "https://storage.example.com/quizzes/...",
   "imagePublicId": "course-images/javascript-fundamentals",
   "hasProject": true,
   "topicWeight": 50,
@@ -1243,7 +1043,7 @@ Luu y project requirement:
   "name": "JavaScript Fundamentals",
   "slug": "javascript-fundamentals",
   "description": "Khoa hoc co ban ve JavaScript",
-  "imageUrl": "https://res.cloudinary.com/...",
+  "imageUrl": "https://storage.example.com/quizzes/...",
   "imagePublicId": "course-images/javascript-fundamentals",
   "hasProject": true,
   "topicWeight": 50,
@@ -1252,7 +1052,7 @@ Luu y project requirement:
 ```
 
 - `imageUrl` va `imagePublicId` la optional, nhung neu gui phai gui **ca hai** cung luc. Gui mot trong hai -> `400`.
-- `imageUrl` phai la HTTPS URL thuoc `res.cloudinary.com` va dung cloud name.
+- `imageUrl` phai la URL khớp chính xác MINIO_ENDPOINT, bucket và object key.
 - Lay `imageUrl` + `imagePublicId` bang cach upload anh truoc qua `POST /course/upload/image-signature` (xem muc 7.4).
 - **Trong so progress:** neu gui `topicWeight` / `projectWeight` thi phai gui **ca hai**, va:
   - `hasProject=true` → `topicWeight + projectWeight` **phai = 100** (thieu/thua → `400`, vd `"topicWeight + projectWeight must equal 100 (got 80)"`).
@@ -1266,13 +1066,13 @@ Luu y project requirement:
   "name": "JavaScript Fundamentals v2",
   "slug": "javascript-fundamentals-v2",
   "description": "...",
-  "imageUrl": "https://res.cloudinary.com/...",
+  "imageUrl": "https://storage.example.com/quizzes/...",
   "imagePublicId": "course-images/javascript-fundamentals-v2",
   "hasProject": false
 }
 ```
 
-- Khi cap nhat `imagePublicId` moi khac cu, anh cu tren Cloudinary se tu dong bi **xoa**.
+- Khi cap nhat `imagePublicId` moi khac cu, anh cu tren MinIO se tu dong bi **xoa**.
 - Doi weight: cung rule nhu create — gui 1 trong 2 → `400`; tong ≠ 100 → `400`.
 **Body `PATCH .../review`:**
 
@@ -1314,93 +1114,7 @@ Khong tra userId / PII. Ma khong ton tai → `404` voi envelope loi:
 
 ### 7.4 Upload course image signature — [Admin]
 
-`POST /course/upload/image-signature`
-
-Lay signature de FE upload anh cover course truc tiep len Cloudinary (khong qua server).
-
-Body (optional):
-
-```json
-{
-  "publicId": "javascript-fundamentals"
-}
-```
-
-Response `data`:
-
-```json
-{
-  "signature": "abc123...",
-  "timestamp": 1718000000,
-  "folder": "course-images",
-  "apiKey": "your_api_key",
-  "cloudName": "your_cloud",
-  "resourceType": "auto",
-  "uploadUrl": "https://api.cloudinary.com/v1_1/your_cloud/auto/upload"
-}
-```
-
-**Flow upload anh cho course (3 buoc):**
-
-```
-1. POST /course/upload/image-signature  →  nhan signature
-2. FE upload anh truc tiep len Cloudinary (multipart/form-data)
-3. POST /course hoac PUT /course/:id  voi { imageUrl, imagePublicId }
-```
-
-**TypeScript snippet:**
-
-```ts
-async function getCourseImageSignature(publicId?: string): Promise<UploadSignatureResponse> {
-  const res = await fetch('/course/upload/image-signature', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
-    body: JSON.stringify(publicId ? { publicId } : {}),
-  });
-  if (!res.ok) throw new Error('Cannot get signature');
-  const payload = await res.json();
-  return payload.data;
-}
-
-async function uploadCourseImage(file: File, sig: UploadSignatureResponse, publicId?: string) {
-  const form = new FormData();
-  form.append('file', file);
-  form.append('api_key', sig.apiKey);
-  form.append('timestamp', String(sig.timestamp));
-  form.append('signature', sig.signature);
-  form.append('folder', sig.folder);
-  form.append('resource_type', sig.resourceType);
-  if (publicId) form.append('public_id', publicId);
-
-  const res = await fetch(sig.uploadUrl, { method: 'POST', body: form });
-  if (!res.ok) throw new Error('Cloudinary upload failed');
-  const result = await res.json();
-
-  return {
-    imageUrl: result.secure_url as string,
-    imagePublicId: result.public_id as string,
-  };
-}
-
-// Usage: tao course kem anh
-async function createCourseWithImage(
-  file: File,
-  courseData: { name: string; slug: string; description?: string; hasProject?: boolean },
-) {
-  const publicId = file.name.replace(/\.[^.]+$/, '');
-  const sig = await getCourseImageSignature(publicId);
-  const { imageUrl, imagePublicId } = await uploadCourseImage(file, sig, publicId);
-
-  const res = await fetch('/course', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
-    body: JSON.stringify({ ...courseData, imageUrl, imagePublicId }),
-  });
-  return res.json();
-}
-```
-
----
+`POST /course/upload/image-signature` với body `{"publicId": "optional-name"}` trả presigned PUT/GET MinIO. Dùng đúng `uploadUrl` để PUT file trực tiếp; lấy `secureUrl`, `publicId` từ response xin chữ ký để lưu metadata. Giới hạn ảnh 3 MB, hết hạn 5 phút. Frontend tự chuyển WebP nếu cần. Xem [luồng upload MinIO trong DEPLOY.md](../DEPLOY.md).
 
 ## 8) Session Expiration
 
@@ -1459,25 +1173,25 @@ async function createCourseWithImage(
 
 1. Admin chon anh cho topic.
 2. Lay signature: `POST /topic/upload/signature` (voi Bearer admin token).
-3. Upload anh truc tiep len Cloudinary.
-4. Lay `imageUrl` + `imagePublicId` tu Cloudinary response.
+3. Upload anh truc tiep len MinIO.
+4. Lay `imageUrl` + `imagePublicId` từ response xin chữ ký MinIO.
 5. Gui cung voi topic data khi tao (`POST /topic`) hoac cap nhat (`PUT /topic/:id`).
 
 ### Course image upload flow (admin)
 
 1. Admin chon anh cover cho course.
 2. Lay signature: `POST /course/upload/image-signature` (voi Bearer admin token).
-3. Upload anh truc tiep len Cloudinary.
-4. Lay `imageUrl` + `imagePublicId` tu Cloudinary response.
+3. Upload anh truc tiep len MinIO.
+4. Lay `imageUrl` + `imagePublicId` từ response xin chữ ký MinIO.
 5. Gui cung voi course data khi tao (`POST /course`) hoac cap nhat (`PUT /course/:id`).
-6. Khi xoa course, anh tren Cloudinary se tu dong bi xoa theo.
+6. Khi xoa course, anh tren MinIO se tu dong bi xoa theo.
 
 ### Quiz image upload flow (admin)
 
 1. Admin chon anh cho cau hoi (cau hoi dang hinh anh).
 2. Lay signature: `POST /quiz/upload/signature` (voi Bearer admin token).
-3. Upload anh truc tiep len Cloudinary.
-4. Lay `imageUrl` + `imagePublicId` tu Cloudinary response.
+3. Upload anh truc tiep len MinIO.
+4. Lay `imageUrl` + `imagePublicId` từ response xin chữ ký MinIO.
 5. Gui cung voi quiz data khi tao (`POST /quiz`) hoac cap nhat (`PUT /quiz/:id`).
 6. FE hien thi: moi response quiz co `content.image` (URL) + `content.has_image` — render anh duoi text cau hoi.
-7. Doi anh / xoa quiz → anh cu tren Cloudinary tu dong bi xoa.
+7. Doi anh / xoa quiz → anh cu tren MinIO tu dong bi xoa.

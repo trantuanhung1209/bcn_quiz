@@ -22,7 +22,7 @@ describe('TopicService', () => {
     $transaction: jest.fn(),
   };
 
-  const cloudinaryService = {};
+  const minioService = {};
   const courseProgressService = {
     reevaluateAllUsersForCourse: jest.fn(),
   };
@@ -33,7 +33,7 @@ describe('TopicService', () => {
     jest.clearAllMocks();
     service = new TopicService(
       prisma as never,
-      cloudinaryService as never,
+      minioService as never,
       courseProgressService as never,
     );
   });

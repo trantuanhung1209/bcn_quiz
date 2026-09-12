@@ -1,13 +1,13 @@
 # bcn_quiz
 
-NestJS API for quizzes, topics, courses, attempt sessions, project submissions, and certificates. Authentication is proxied to the Profiles API; learning data lives in PostgreSQL; media uses Cloudinary signed uploads.
+NestJS API for quizzes, topics, courses, attempt sessions, project submissions, and certificates. Authentication is proxied to the Profiles API; learning data lives in PostgreSQL; media uses MinIO presigned PUT uploads.
 
 ## Stack
 
 - NestJS 11 + Prisma 7 (PostgreSQL via `@prisma/adapter-pg`)
 - Auth: Bearer / cookie validated against `PROFILES_API_BASE_URL`
 - Email OTP / 2FA mail: gửi qua **Profiles** (Resend) — quiz không gửi SMTP trực tiếp
-- Cache: Redis (`REDIS_URL` or Sentinel via `REDIS_SENTINELS` + `REDIS_SENTINEL_NAME`) for auth-token + shared GET catalog + Throttler; key prefix `bcn:quiz:`
+- Cache: Redis (`REDIS_HOST`/`REDIS_PORT` in production; legacy URL/Sentinel in development) for auth-token + shared GET catalog + Throttler; key prefix `bcn:quiz:`
 - Logging: Winston (+ optional Loki)
 
 ## Setup
@@ -23,6 +23,10 @@ docker compose up -d
 
 ```bash
 cp .env.example .env
+# Host dev: NODE_ENV=development, APP_PORT=3000 (Quiz: 3001),
+# DATABASE_URL=postgresql://postgres:postgres@localhost:5433/<local-db>?schema=public
+# REDIS_HOST=localhost, REDIS_PORT=6379, PROFILES_API_BASE_URL=http://localhost:3000
+# Fill MINIO_* for your development MinIO server when testing uploads.
 # DATABASE_URL=.../bcn_quiz  REDIS_URL=redis://localhost:6379  PROFILES_API_BASE_URL=...
 
 npm install
@@ -31,14 +35,14 @@ npm run db:seed        # optional
 npm run start:dev
 ```
 
-API listens on `PORT` (required). Redis is required in production (`REDIS_URL` or Sentinel).
+API listens on `APP_PORT` (`PORT` remains supported locally). Production Redis uses `redis:6379`, DB 0 and `REDIS_PREFIX=quizzes:`.
 
 ## Scripts
 
 | Script                   | Purpose                                 |
 | ------------------------ | --------------------------------------- |
 | `npm run start:dev`      | Watch mode                              |
-| `npm run start:prod`     | `prisma migrate deploy` then run `dist` |
+| `npm run start:prod`     | Run `dist` (migration is a separate deploy step) |
 | `npm run db:migrate`     | Create/apply migrations (dev)           |
 | `npm run migrate:deploy` | Apply migrations (CI/prod)              |
 | `npm test`               | Unit tests                              |
@@ -74,42 +78,4 @@ Optional `startsAt` / `endsAt` on a Topic control when students may take the exa
 
 ### BCN organization deployment
 
-Production deployment is defined by `.github/workflows/ci.yml` and
-`docker-compose.prod.yml`. It runs only from `main`, publishes the immutable
-Git SHA image to `ghcr.io/bcn-org/bcn_quiz`, and deploys it through the BCN
-organization runner to `/opt/apps/bcn_quiz`.
-
-Create a GitHub Environment named `production` before the first deployment.
-At minimum, configure:
-
-- Variables: `APP_PORT=3001`, `HOST_PORT` (assigned by BCN infra),
-  `POSTGRES_USER=quiz`, `POSTGRES_DB=bcn_quiz`, and
-  `PROFILES_API_BASE_URL=http://bcn_profiles:3000`.
-- Secrets: `POSTGRES_PASSWORD`, `REDIS_URL`, and
-  `REDIS_PASSWORD`. CI generates the database URL with host `quiz-postgres`;
-  the shared Redis URL must use host `redis`.
-
-Cloudinary uploads require the variable `CLOUDINARY_CLOUD_NAME` and secrets
-`CLOUDINARY_API_KEY` and `CLOUDINARY_API_SECRET`. For existing setups, an API key
-variable is also accepted; the secret takes precedence. Deployment validates all
-three settings before changing the running stack. Other settings
-from `.env.example` are mapped by the workflow and use application defaults
-when omitted.
-
-`AUTH_CACHE_TTL_MS` defaults to `0`: Quiz revalidates protected requests with
-Profiles so blocking, logout, and role changes apply across both apps without a
-60-second stale authorization window. A positive value opts into that window.
-
-Before enabling production deployment:
-
-1. Move or transfer the repository to `bcn-org` and use `main` as its default
-   branch.
-2. Confirm `HOST_PORT` is unique on the production server.
-3. Confirm the external Docker network `bcn_profiles_default` exists. Quiz
-   uses it for shared Redis and internal Profiles authentication.
-4. Start Docker locally and run `docker build -t bcn-quiz:test .`.
-5. Merge to `main`, then monitor the `CI/CD` workflow and `/health` check.
-
-## License
-
-UNLICENSED (private).
+See [DEPLOY.md](DEPLOY.md) for shared PostgreSQL/Redis/MinIO, GitHub Environment `production`, database migration and the new frontend MinIO upload flow.

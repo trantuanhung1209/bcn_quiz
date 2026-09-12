@@ -11,7 +11,7 @@ describe('CourseService.submitProject guards', () => {
     },
   };
 
-  const cloudinaryService = {
+  const minioService = {
     createUploadSignature: jest.fn(),
   };
 
@@ -27,7 +27,7 @@ describe('CourseService.submitProject guards', () => {
     service = new CourseService(
       prisma as never,
       courseProgressService as never,
-      cloudinaryService as never,
+      minioService as never,
     );
   });
 
@@ -71,7 +71,7 @@ describe('CourseService.submitProject guards', () => {
       service.submitProject('course-1', req, {
         files: [
           {
-            filePath: 'https://res.cloudinary.com/demo/raw/upload/v1/x.pdf',
+            filePath: 'https://res.minio.com/demo/raw/upload/v1/x.pdf',
             storageKey: 'project-submissions/course-1/user-1/x',
             originalName: 'x.pdf',
           },

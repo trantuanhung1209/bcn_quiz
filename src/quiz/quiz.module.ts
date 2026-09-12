@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 import { QuizController } from './quiz.controller';
 import { QuizService } from './quiz.service';
-import { CloudinaryService } from '../common/storage/cloudinary.service';
+import { MinioService } from '../common/storage/minio.service';
 import { CourseModule } from '../course/course.module';
 
 @Module({
   imports: [CourseModule],
   controllers: [QuizController],
-  providers: [QuizService, CloudinaryService],
+  providers: [QuizService, MinioService],
 })
 export class QuizModule {}

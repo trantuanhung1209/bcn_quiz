@@ -22,7 +22,7 @@ export class UpsertCourseProjectDto {
   isRequired?: boolean;
 
   /**
-   * Optional Cloudinary secure URL for the requirement brief/spec file.
+   * Optional MinIO secure URL for the requirement brief/spec file.
    * Send together with attachmentPublicId. Send both `null` to remove.
    */
   @IsOptional()

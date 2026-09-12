@@ -9,7 +9,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { CloudinaryService } from '../common/storage/cloudinary.service';
+import { MinioService } from '../common/storage/minio.service';
 import { CourseProgressService } from '../course/course-progress.service';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { CreateQuizDto } from './dto/create-quiz.dto';
@@ -171,7 +171,7 @@ export class QuizService {
 
   constructor(
     private prisma: PrismaService,
-    private readonly cloudinaryService: CloudinaryService,
+    private readonly minioService: MinioService,
     private readonly courseProgressService: CourseProgressService,
   ) {}
 
@@ -630,7 +630,7 @@ export class QuizService {
       },
     });
 
-    // PUT semantics: ảnh cũ bị thay (hoặc bỏ) thì xoá asset cũ trên Cloudinary
+    // PUT semantics: ảnh cũ bị thay (hoặc bỏ) thì xoá asset cũ trên MinIO
     if (
       existing.imagePublicId &&
       existing.imagePublicId !== input.imagePublicId
@@ -668,19 +668,18 @@ export class QuizService {
 
   createImageUploadSignature(dto: CreateUploadSignatureDto) {
     const folder = (
-      process.env.CLOUDINARY_QUIZ_IMAGE_FOLDER ?? 'quiz-images'
+      process.env.MINIO_QUIZ_IMAGE_FOLDER ?? 'quiz-images'
     ).replace(/^\/+|\/+$/g, '');
     const timestamp = Math.floor(Date.now() / 1000);
     const publicId = dto.publicId?.trim()
       ? this.sanitizePublicId(dto.publicId)
       : undefined;
 
-    return this.cloudinaryService.createUploadSignature({
+    return this.minioService.createUploadSignature({
       timestamp,
       folder,
       publicId,
       includeMaxBytes: true,
-      ...this.cloudinaryService.getImageOptimizationDefaults(),
     });
   }
 
@@ -741,32 +740,11 @@ export class QuizService {
     }
 
     if (imageUrl) {
-      const { cloudName } = this.cloudinaryService.getCloudinaryConfig();
-      let parsed: URL;
-      try {
-        parsed = new URL(imageUrl);
-      } catch {
-        throw new BadRequestException('imageUrl is not a valid URL');
-      }
-
-      if (
-        parsed.protocol !== 'https:' ||
-        !parsed.hostname.endsWith('res.cloudinary.com')
-      ) {
-        throw new BadRequestException(
-          'imageUrl must be a valid Cloudinary https URL',
-        );
-      }
-
-      if (!parsed.pathname.includes(`/${cloudName}/`)) {
-        throw new BadRequestException(
-          'imageUrl does not belong to the configured Cloudinary cloud',
-        );
-      }
+      this.minioService.assertObjectUrl(imageUrl, imagePublicId!);
     }
 
     if (imagePublicId) {
-      await this.cloudinaryService.assertImageWithinMaxBytes(imagePublicId);
+      await this.minioService.assertImageWithinMaxBytes(imagePublicId);
     }
   }
 
@@ -785,9 +763,9 @@ export class QuizService {
 
   private async deleteQuizImage(publicId: string): Promise<void> {
     try {
-      await this.cloudinaryService.deleteImage(publicId);
+      await this.minioService.deleteImage(publicId);
     } catch {
-      this.logger.warn(`Failed to delete Cloudinary quiz image '${publicId}'`);
+      this.logger.warn(`Failed to delete MinIO quiz image '${publicId}'`);
     }
   }
 }

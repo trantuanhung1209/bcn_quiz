@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CloudinaryService } from '../common/storage/cloudinary.service';
+import { MinioService } from '../common/storage/minio.service';
 import { CourseProgressService } from '../course/course-progress.service';
 import { CreateTopicDto } from './dto/create-topic.dto';
 import { UpdateTopicDto } from './dto/update-topic.dto';
@@ -108,7 +108,7 @@ export class TopicService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly cloudinaryService: CloudinaryService,
+    private readonly minioService: MinioService,
     private readonly courseProgressService: CourseProgressService,
   ) {}
 
@@ -440,13 +440,13 @@ export class TopicService {
       data.endsAt !== undefined ? data.endsAt : existingSchedule.endsAt;
     validateTopicScheduleWindow(nextStartsAt, nextEndsAt);
 
-    // If a new image is provided, delete the old one from Cloudinary
+    // If a new image is provided, delete the old one from MinIO
     if (data.imagePublicId) {
       if (
         existingSchedule.imagePublicId &&
         existingSchedule.imagePublicId !== data.imagePublicId
       ) {
-        await this.deleteCloudinaryImage(existingSchedule.imagePublicId);
+        await this.deleteMinioImage(existingSchedule.imagePublicId);
       }
     }
 
@@ -485,7 +485,7 @@ export class TopicService {
     await this.prisma.topic.delete({ where: { id } });
 
     if (topic.imagePublicId) {
-      await this.deleteCloudinaryImage(topic.imagePublicId);
+      await this.deleteMinioImage(topic.imagePublicId);
     }
 
     for (const link of linkedCourses) {
@@ -499,19 +499,18 @@ export class TopicService {
 
   createUploadSignature(dto: CreateUploadSignatureDto) {
     const folder = (
-      process.env.CLOUDINARY_TOPIC_IMAGE_FOLDER ?? 'topic-images'
+      process.env.MINIO_TOPIC_IMAGE_FOLDER ?? 'topic-images'
     ).replace(/^\/+|\/+$/g, '');
     const timestamp = Math.floor(Date.now() / 1000);
     const publicId = dto.publicId?.trim()
       ? this.sanitizePublicId(dto.publicId)
       : undefined;
 
-    return this.cloudinaryService.createUploadSignature({
+    return this.minioService.createUploadSignature({
       timestamp,
       folder,
       publicId,
       includeMaxBytes: true,
-      ...this.cloudinaryService.getImageOptimizationDefaults(),
     });
   }
 
@@ -585,32 +584,11 @@ export class TopicService {
     }
 
     if (imageUrl) {
-      const { cloudName } = this.cloudinaryService.getCloudinaryConfig();
-      let parsed: URL;
-      try {
-        parsed = new URL(imageUrl);
-      } catch {
-        throw new BadRequestException('imageUrl is not a valid URL');
-      }
-
-      if (
-        parsed.protocol !== 'https:' ||
-        !parsed.hostname.endsWith('res.cloudinary.com')
-      ) {
-        throw new BadRequestException(
-          'imageUrl must be a valid Cloudinary https URL',
-        );
-      }
-
-      if (!parsed.pathname.includes(`/${cloudName}/`)) {
-        throw new BadRequestException(
-          'imageUrl does not belong to the configured Cloudinary cloud',
-        );
-      }
+      this.minioService.assertObjectUrl(imageUrl, imagePublicId!);
     }
 
     if (imagePublicId) {
-      await this.cloudinaryService.assertImageWithinMaxBytes(imagePublicId);
+      await this.minioService.assertImageWithinMaxBytes(imagePublicId);
     }
   }
 
@@ -627,11 +605,11 @@ export class TopicService {
     return sanitized;
   }
 
-  private async deleteCloudinaryImage(publicId: string): Promise<void> {
+  private async deleteMinioImage(publicId: string): Promise<void> {
     try {
-      await this.cloudinaryService.deleteRawFile(publicId);
+      await this.minioService.deleteRawFile(publicId);
     } catch {
-      this.logger.warn(`Failed to delete Cloudinary image '${publicId}'`);
+      this.logger.warn(`Failed to delete MinIO image '${publicId}'`);
     }
   }
 }

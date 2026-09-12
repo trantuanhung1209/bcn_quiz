@@ -33,7 +33,7 @@ import { UpdateCourseDto } from './dto/update-course.dto';
 import { UpsertCourseProjectDto } from './dto/upsert-course-project.dto';
 import { PrismaService } from '../prisma/prisma.service';
 import { CourseProgressService } from './course-progress.service';
-import { CloudinaryService } from '../common/storage/cloudinary.service';
+import { MinioService } from '../common/storage/minio.service';
 import { withTopicAvailability } from '../topic/topic-schedule';
 
 const ALLOWED_UPLOAD_EXTENSIONS = new Set(['.zip', '.rar', '.pdf', '.docx']);
@@ -61,7 +61,7 @@ export class CourseService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly courseProgressService: CourseProgressService,
-    private readonly cloudinaryService: CloudinaryService,
+    private readonly minioService: MinioService,
   ) {}
 
   async getAllCourses(query: PaginationQueryDto) {
@@ -313,7 +313,7 @@ export class CourseService {
       await this.validateCourseImageFields(data.imageUrl, data.imagePublicId);
     }
 
-    // Nếu có ảnh mới khác ảnh cũ thì xoá ảnh cũ trên Cloudinary
+    // Nếu có ảnh mới khác ảnh cũ thì xoá ảnh cũ trên MinIO
     if (data.imagePublicId) {
       const existing = await this.prisma.course.findUnique({
         where: { id },
@@ -454,19 +454,18 @@ export class CourseService {
 
   createImageUploadSignature(dto: CreateUploadSignatureDto) {
     const folder = (
-      process.env.CLOUDINARY_COURSE_IMAGE_FOLDER ?? 'course-images'
+      process.env.MINIO_COURSE_IMAGE_FOLDER ?? 'course-images'
     ).replace(/^\/+|\/+$/g, '');
     const timestamp = Math.floor(Date.now() / 1000);
     const publicId = dto.publicId?.trim()
       ? this.sanitizeCoursePublicId(dto.publicId)
       : undefined;
 
-    return this.cloudinaryService.createUploadSignature({
+    return this.minioService.createUploadSignature({
       timestamp,
       folder,
       publicId,
       includeMaxBytes: true,
-      ...this.cloudinaryService.getImageOptimizationDefaults(),
     });
   }
 
@@ -575,6 +574,13 @@ export class CourseService {
       existingRequirement,
     );
 
+    if (attachmentPatch.data.attachmentPublicId) {
+      await this.minioService.assertObjectWithinMaxBytes(
+        attachmentPatch.data.attachmentPublicId,
+        MAX_PROJECT_FILE_SIZE,
+      );
+    }
+
     const requirement = await this.prisma.courseProjectRequirement.upsert({
       where: { courseId },
       update: {
@@ -596,7 +602,7 @@ export class CourseService {
     });
 
     if (attachmentPatch.publicIdToDelete) {
-      await this.deleteCloudinaryFiles([attachmentPatch.publicIdToDelete]);
+      await this.deleteMinioFiles([attachmentPatch.publicIdToDelete]);
     }
 
     let enabledProject = false;
@@ -634,7 +640,7 @@ export class CourseService {
       ? this.sanitizePublicId(dto.publicId)
       : undefined;
 
-    return this.cloudinaryService.createUploadSignature({
+    return this.minioService.createUploadSignature({
       timestamp,
       folder,
       publicId,
@@ -659,7 +665,7 @@ export class CourseService {
       ? this.sanitizePublicId(dto.publicId)
       : undefined;
 
-    return this.cloudinaryService.createUploadSignature({
+    return this.minioService.createUploadSignature({
       timestamp,
       folder,
       publicId,
@@ -710,7 +716,7 @@ export class CourseService {
       );
     }
 
-    const uploadedCloudFiles = this.normalizeAndValidateSubmissionFiles(
+    const uploadedCloudFiles = await this.normalizeAndValidateSubmissionFiles(
       data.files,
       courseId,
       userId,
@@ -742,7 +748,7 @@ export class CourseService {
         },
       });
     } catch (error) {
-      await this.deleteCloudinaryFiles(
+      await this.deleteMinioFiles(
         uploadedCloudFiles.map((file) => file.publicId),
       );
       throw error;
@@ -879,7 +885,7 @@ export class CourseService {
     };
 
     const uploadedCloudFiles = hasNewFiles
-      ? this.normalizeAndValidateSubmissionFiles(
+      ? await this.normalizeAndValidateSubmissionFiles(
           uploadedFiles,
           courseId,
           userId,
@@ -942,7 +948,7 @@ export class CourseService {
       });
     } catch (error) {
       if (uploadedCloudFiles.length > 0) {
-        await this.deleteCloudinaryFiles(
+        await this.deleteMinioFiles(
           uploadedCloudFiles.map((file) => file.publicId),
         );
       }
@@ -953,7 +959,7 @@ export class CourseService {
       const oldStorageKeys = filesToDelete
         .map((file) => file.storageKey)
         .filter((key): key is string => Boolean(key));
-      await this.deleteCloudinaryFiles(oldStorageKeys);
+      await this.deleteMinioFiles(oldStorageKeys);
     }
 
     return this.mapProjectSubmission(updated);
@@ -1005,7 +1011,7 @@ export class CourseService {
     const storageKeys = submission.files
       .map((file) => file.storageKey)
       .filter((key): key is string => Boolean(key));
-    await this.deleteCloudinaryFiles(storageKeys);
+    await this.deleteMinioFiles(storageKeys);
 
     return {
       id: submission.id,
@@ -1347,7 +1353,7 @@ export class CourseService {
 
   private getProjectSubmissionFolder(courseId: string, userId: string): string {
     const baseFolder = (
-      process.env.CLOUDINARY_PROJECT_FOLDER ?? 'project-submissions'
+      process.env.MINIO_PROJECT_FOLDER ?? 'project-submissions'
     ).replace(/^\/+|\/+$/g, '');
 
     return `${baseFolder}/${courseId}/${userId}`;
@@ -1355,8 +1361,7 @@ export class CourseService {
 
   private getProjectRequirementFolder(courseId: string): string {
     const baseFolder = (
-      process.env.CLOUDINARY_PROJECT_REQUIREMENT_FOLDER ??
-      'project-requirements'
+      process.env.MINIO_PROJECT_REQUIREMENT_FOLDER ?? 'project-requirements'
     ).replace(/^\/+|\/+$/g, '');
 
     return `${baseFolder}/${courseId}`;
@@ -1458,29 +1463,7 @@ export class CourseService {
     courseId: string,
   ): void {
     const folder = this.getProjectRequirementFolder(courseId);
-    const { cloudName } = this.cloudinaryService.getCloudinaryConfig();
-
-    let parsed: URL;
-    try {
-      parsed = new URL(secureUrl);
-    } catch {
-      throw new BadRequestException(`Invalid attachmentUrl: ${secureUrl}`);
-    }
-
-    if (
-      parsed.protocol !== 'https:' ||
-      !parsed.hostname.endsWith('res.cloudinary.com')
-    ) {
-      throw new BadRequestException(
-        'attachmentUrl must be a valid Cloudinary https URL',
-      );
-    }
-
-    if (!parsed.pathname.includes(`/${cloudName}/`)) {
-      throw new BadRequestException(
-        'attachmentUrl does not belong to configured Cloudinary cloud',
-      );
-    }
+    this.minioService.assertObjectUrl(secureUrl, publicId);
 
     if (!publicId.startsWith(`${folder}/`) && publicId !== folder) {
       throw new BadRequestException(
@@ -1502,11 +1485,11 @@ export class CourseService {
     return sanitized;
   }
 
-  private normalizeAndValidateSubmissionFiles(
+  private async normalizeAndValidateSubmissionFiles(
     files: ProjectSubmissionFileMetadataDto[],
     courseId: string,
     userId: string,
-  ): ValidatedProjectFileMetadata[] {
+  ): Promise<ValidatedProjectFileMetadata[]> {
     if (files.length === 0) {
       throw new BadRequestException('At least one file is required');
     }
@@ -1518,11 +1501,10 @@ export class CourseService {
     }
 
     const folder = this.getProjectSubmissionFolder(courseId, userId);
-    const { cloudName } = this.cloudinaryService.getCloudinaryConfig();
     const seenSecureUrls = new Set<string>();
     const seenPublicIds = new Set<string>();
 
-    return files.map((file) => {
+    const validated = files.map((file) => {
       const secureUrl = file.secureUrl.trim();
       const publicId = this.sanitizePublicId(file.publicId);
       const originalName = file.originalName.trim();
@@ -1550,27 +1532,7 @@ export class CourseService {
         );
       }
 
-      let parsedUrl: URL;
-      try {
-        parsedUrl = new URL(secureUrl);
-      } catch {
-        throw new BadRequestException(`Invalid secureUrl: ${secureUrl}`);
-      }
-
-      if (
-        parsedUrl.protocol !== 'https:' ||
-        !parsedUrl.hostname.endsWith('res.cloudinary.com')
-      ) {
-        throw new BadRequestException(
-          'secureUrl must be a valid Cloudinary https URL',
-        );
-      }
-
-      if (!parsedUrl.pathname.includes(`/${cloudName}/`)) {
-        throw new BadRequestException(
-          'secureUrl does not belong to configured Cloudinary cloud',
-        );
-      }
+      this.minioService.assertObjectUrl(secureUrl, publicId);
 
       if (!publicId.startsWith(`${folder}/`)) {
         throw new BadRequestException(
@@ -1601,15 +1563,24 @@ export class CourseService {
         fileSize,
       };
     });
+    await Promise.all(
+      validated.map((file) =>
+        this.minioService.assertObjectWithinMaxBytes(
+          file.publicId,
+          MAX_PROJECT_FILE_SIZE,
+        ),
+      ),
+    );
+    return validated;
   }
 
-  private async deleteCloudinaryFiles(storageKeys: string[]): Promise<void> {
+  private async deleteMinioFiles(storageKeys: string[]): Promise<void> {
     await Promise.all(
       storageKeys.map(async (key) => {
         try {
-          await this.cloudinaryService.deleteRawFile(key);
+          await this.minioService.deleteRawFile(key);
         } catch {
-          this.logger.warn(`Failed to delete Cloudinary asset '${key}'`);
+          this.logger.warn(`Failed to delete MinIO asset '${key}'`);
         }
       }),
     );
@@ -1719,28 +1690,28 @@ export class CourseService {
     ];
   }
 
-  /** Match removeFiles entry against id, secureUrl, publicId, or Cloudinary path variants. */
+  /** Match removeFiles entry against id, secureUrl, publicId, or MinIO path variants. */
   private fileMatchesRemoveTarget(
     file: { id: string; filePath: string; storageKey: string | null },
     target: string,
   ): boolean {
-    const normalizedTarget = this.normalizeCloudinaryRef(target);
+    const normalizedTarget = this.normalizeMinioRef(target);
     if (!normalizedTarget) {
       return false;
     }
 
     if (
       file.id === target.trim() ||
-      this.normalizeCloudinaryRef(file.filePath) === normalizedTarget ||
+      this.normalizeMinioRef(file.filePath) === normalizedTarget ||
       (file.storageKey
-        ? this.normalizeCloudinaryRef(file.storageKey) === normalizedTarget
+        ? this.normalizeMinioRef(file.storageKey) === normalizedTarget
         : false)
     ) {
       return true;
     }
 
     if (file.storageKey) {
-      const key = this.normalizeCloudinaryRef(file.storageKey);
+      const key = this.normalizeMinioRef(file.storageKey);
       if (key && normalizedTarget.includes(key)) {
         return true;
       }
@@ -1749,7 +1720,7 @@ export class CourseService {
     return false;
   }
 
-  private normalizeCloudinaryRef(value: string): string {
+  private normalizeMinioRef(value: string): string {
     const trimmed = value.trim();
     if (!trimmed) {
       return '';
@@ -1828,32 +1799,11 @@ export class CourseService {
     }
 
     if (imageUrl) {
-      const { cloudName } = this.cloudinaryService.getCloudinaryConfig();
-      let parsed: URL;
-      try {
-        parsed = new URL(imageUrl);
-      } catch {
-        throw new BadRequestException('imageUrl is not a valid URL');
-      }
-
-      if (
-        parsed.protocol !== 'https:' ||
-        !parsed.hostname.endsWith('res.cloudinary.com')
-      ) {
-        throw new BadRequestException(
-          'imageUrl must be a valid Cloudinary https URL',
-        );
-      }
-
-      if (!parsed.pathname.includes(`/${cloudName}/`)) {
-        throw new BadRequestException(
-          'imageUrl does not belong to the configured Cloudinary cloud',
-        );
-      }
+      this.minioService.assertObjectUrl(imageUrl, imagePublicId!);
     }
 
     if (imagePublicId) {
-      await this.cloudinaryService.assertImageWithinMaxBytes(imagePublicId);
+      await this.minioService.assertImageWithinMaxBytes(imagePublicId);
     }
   }
 
@@ -1872,11 +1822,9 @@ export class CourseService {
 
   private async deleteCourseImage(publicId: string): Promise<void> {
     try {
-      await this.cloudinaryService.deleteRawFile(publicId);
+      await this.minioService.deleteRawFile(publicId);
     } catch {
-      this.logger.warn(
-        `Failed to delete Cloudinary course image '${publicId}'`,
-      );
+      this.logger.warn(`Failed to delete MinIO course image '${publicId}'`);
     }
   }
 }

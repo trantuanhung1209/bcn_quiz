@@ -90,7 +90,7 @@ async function bootstrap() {
 }
 
 function getRequiredPort(): string {
-  const port = process.env.PORT;
+  const port = process.env.APP_PORT || process.env.PORT;
 
   if (!port) {
     throw new Error('PORT environment variable is required');

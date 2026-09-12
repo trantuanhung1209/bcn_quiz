@@ -36,7 +36,9 @@ import { RedisModule } from './redis/redis.module';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const prefix =
-          config.get<string>('REDIS_KEY_PREFIX')?.trim() || 'bcn:quiz:';
+          config.get<string>('REDIS_PREFIX')?.trim() ||
+          config.get<string>('REDIS_KEY_PREFIX')?.trim() ||
+          'bcn:quiz:';
         const redis = createRedisClient(config, {
           keyPrefix: `${prefix}throttler:`,
           lazyConnect: false,

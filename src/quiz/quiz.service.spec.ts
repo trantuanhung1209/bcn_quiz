@@ -29,8 +29,8 @@ describe('QuizService.createQuizzes', () => {
     $transaction: jest.fn(),
   };
 
-  const cloudinaryService = {
-    getCloudinaryConfig: jest.fn(() => ({ cloudName: 'demo' })),
+  const minioService = {
+    getMinIOConfig: jest.fn(() => ({ cloudName: 'demo' })),
     assertImageWithinMaxBytes: jest.fn(),
   };
 
@@ -92,7 +92,7 @@ describe('QuizService.createQuizzes', () => {
 
     service = new QuizService(
       prisma as never,
-      cloudinaryService as never,
+      minioService as never,
       courseProgressService as never,
     );
   });
