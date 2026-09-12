@@ -41,7 +41,7 @@ jobs:
         run: npx prisma generate
 
       - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=critical
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Lint
         run: npx eslint "{src,apps,libs,test}/**/*.ts"
